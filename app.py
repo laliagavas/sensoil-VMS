@@ -5,7 +5,7 @@ from streamlit_folium import st_folium
 import base64
 import os
 
-# 1. CONFIGURACIÓN DE LA PLATAFORMA DE VENTAS DEMO
+# 1. CONFIGURACIÓN DE LA PLATAFORMA
 st.set_page_config(
     page_title="VMS GeoCloud - SENSOIL Demo Comercial", 
     page_icon="🌍", 
@@ -43,7 +43,6 @@ def get_base64_image(image_path):
 def cargar_datos_proyecto(id_proyecto):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
-        # Lee saltando los metadatos de Campbell (filas 1, 3 y 4 de metadatos)
         df_data = pd.read_csv(cfg["csv_data"], skiprows=[0, 2, 3])
         df_data.columns = df_data.columns.str.replace('"', '').str.replace("'", "").str.strip()
         df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'].astype(str).str.replace('"', ''))
@@ -59,13 +58,44 @@ def cargar_datos_proyecto(id_proyecto):
     except Exception as e:
         return None, None, f"Error al abrir el archivo {cfg['csv_data']}: {e}"
 
-# 4. BARRA LATERAL (BRANDING CORPORATIVO)
+def formatear_profundidad(col_name):
+    """Transforma sufijos como 158cm a formato legible en metros (1.6m)"""
+    try:
+        parts = col_name.split('_')
+        if len(parts) > 2:
+            cm_str = parts[2].replace('cm', '')
+            metros = float(cm_str) / 100.0
+            return f"{metros:.1f}m"
+    except:
+        pass
+    return "N/A"
+
+# 3. BARRA LATERAL (BRANDING Y CONTROLES GLOBALES)
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
 st.sidebar.title("VMS GeoCloud Dashboard")
-st.sidebar.markdown("---")
-st.sidebar.info("💡 **Uso para Clientes:** Navegue entre las pestañas de las faenas mineras, explore el mapa satelital interactivo y haga clic en el marcador azul para desplegar la radiografía de perforación en tiempo real.")
 
-# 5. ESTRUCTURA DE PESTAÑAS PRINCIPALES
+st.sidebar.markdown("### ⚙️ Panel de Control")
+
+# Manejo de estados de selección de fecha compartidos
+df_drf_aux, _, _ = cargar_datos_proyecto("DRF")
+fechas_drf = sorted(df_drf_aux['TIMESTAMP'].dt.date.unique(), reverse=True) if df_drf_aux is not None else []
+
+fecha_sel = st.sidebar.selectbox(
+    "Selecciona Fecha de Simulación:", 
+    fechas_drf, 
+    key="global_fecha_sel"
+)
+
+variable_grafico = st.sidebar.selectbox(
+    "Variable para Tendencia:", 
+    ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"], 
+    key="global_var_sel"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.info("🎯 **Instrucciones de la Demo:**\n1. Haga clic en el marcador azul del mapa.\n2. Dentro de la foto emergente, haga clic en cualquier etiqueta de profundidad (ej: 1.6m).\n3. La información analítica detallada de ese sensor específico se desplegará mágicamente abajo del mapa.")
+
+# 4. ESTRUCTURA DE PESTAÑAS PRINCIPALES
 tab_drf, tab_romeral = st.tabs(["📍 Estación DRF Chile", "📍 Estación El Romeral"])
 
 def construir_interfaz_proyecto(id_proyecto):
@@ -76,172 +106,153 @@ def construir_interfaz_proyecto(id_proyecto):
         st.error(error)
         return
 
-    # --- DETECCIÓN DINÁMICA DE COLUMNAS (BULLETPROOF CODES) ---
-    # Busca y ordena los canales basándose en el número de sensor real que viene en la columna
+    # --- DETECCIÓN DINÁMICA DE CANALES ---
     cols_vwc = sorted([c for c in df_data.columns if c.startswith('VWC_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_temp = sorted([c for c in df_data.columns if c.startswith('TEMP_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_pt = sorted([c for c in df_data.columns if c.startswith('PT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_dpt = sorted([c for c in df_data.columns if c.startswith('DPT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     
     num_sensores = len(cols_vwc)
-    
     if num_sensores == 0:
-        st.warning(f"No se detectaron columnas con formato de sensor (VWC_) en el archivo de {id_proyecto}.")
+        st.warning("No se detectaron sensores en el archivo.")
         return
 
-    # Generación dinámica de la distribución vertical de nodos sobre la imagen
+    # Distribución de coordenadas sobre la imagen técnica
     coordenadas_nodos = {}
     for idx in range(num_sensores):
         sensor_num = idx + 1
-        # Distribuye uniformemente los sensores entre el 22% y el 82% del alto de la imagen
         top_val = 22 + (idx * (82 - 22) / (num_sensores - 1)) if num_sensores > 1 else 50
         coordenadas_nodos[sensor_num] = {"top": f"{top_val:.1f}%", "left": "51%"}
 
-    # --- CARGA Y PROCESAMIENTO DE FECHAS ---
-    fechas_disponibles = df_data['TIMESTAMP'].dt.date.unique()
-    
-    col_mapa, col_controles = st.columns([5, 3])
-    
-    with col_controles:
-        st.markdown("### ⚙️ Panel de Control")
-        fecha_sel = st.selectbox(f"Selecciona fecha de simulación ({id_proyecto}):", sorted(fechas_disponibles, reverse=True), key=f"sel_fecha_{id_proyecto}")
-        variable_grafico = st.selectbox("Variable para Tendencia Histórica:", ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"], key=f"sel_var_{id_proyecto}")
-        st.info("🎯 **Presentación Comercial:** Al hacer clic en el marcador azul del mapa satelital, emergerá la radiografía interactiva en profundidad con las lecturas calculadas para este día.")
-
+    # Filtrado por fecha seleccionada en el Panel de Control lateral
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
+    if df_dia.empty:
+        st.warning(f"No hay registros para la fecha {fecha_sel} en la estación {id_proyecto}.")
+        return
+        
     ultimo_registro = df_dia.iloc[-1]
     ultima_fecha = ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')
 
-    # --- GENERACIÓN DE LA RADIOGRAFÍA COMPLETA EN POPUP ---
-    img_b64 = get_base64_image(cfg["imagen"])
+    # --- MAPA SATELITAL (ANCHO COMPLETO PARA LIMPIEZA VISUAL) ---
+    st.subheader(f"🗺️ Ubicación Satelital e Infraestructura de Monitoreo")
     
+    m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri World Imagery',
+        name='Vista Satelital',
+        control=False
+    ).add_to(m)
+
+    # --- CONSTRUCCIÓN DEL HTML DE LA RADIOGRAFÍA INTERACTIVA (CON LINKS DE CAPTURA) ---
+    img_b64 = get_base64_image(cfg["imagen"])
     popup_html = f"""
-    <div style="font-family: 'Arial', sans-serif; width: 420px; max-height: 520px; overflow-y: auto; padding: 5px;">
-        <h4 style="color: #0F172A; margin-top: 0; margin-bottom: 8px; border-bottom: 2px solid #3B82F6; padding-bottom: 4px;">
-            🌍 Radiografía VMS - Perfil {id_proyecto}
+    <div style="font-family: 'Arial', sans-serif; width: 320px; text-align: center;">
+        <h4 style="color: #0F172A; margin: 0 0 4px 0; border-bottom: 2px solid #3B82F6; padding-bottom: 4px; font-size: 13px;">
+            📸 Perfil Técnico: {id_proyecto}
         </h4>
-        <p style="font-size: 11px; color: #64748B; margin: 0 0 10px 0;"><b>Registro:</b> {ultima_fecha} ({num_sensores} Sensores)</p>
+        <p style="font-size: 10px; color: #64748B; margin: 0 0 8px 0;">Pinche una profundidad para auditar datos:</p>
     """
     
     if img_b64:
         popup_html += f"""
-        <div style="position: relative; width: 100%; max-width: 380px; margin: auto;">
-            <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 6px; display: block;">
+        <div style="position: relative; width: 100%; max-width: 260px; margin: auto;">
+            <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 4px; display: block;">
         """
-        # Renderizado dinámico basado en las columnas encontradas
         for idx in range(num_sensores):
             sensor_num = idx + 1
             col_name = cols_vwc[idx]
-            vwc = ultimo_registro.get(col_name, 0.0)
-            
-            # Extrae la profundidad física del nombre de la columna (ej: 158cm)
-            parts = col_name.split('_')
-            prof = parts[2] if len(parts) > 2 else ""
-            
+            prof_label = formatear_profundidad(col_name)
             coord = coordenadas_nodos[sensor_num]
-            color_borde = "#28A745" if pd.notna(vwc) and vwc >= 0 else "#DC3545"
-            texto_vwc = f"{vwc:.1f}%" if pd.notna(vwc) and vwc >= 0 else "ERROR"
+            
+            # Link especial que recarga la app inyectando el sensor seleccionado en la URL
+            link_target = f"?sensor={id_proyecto}_{sensor_num}"
             
             popup_html += f"""
-            <div style="position: absolute; top: {coord['top']}; left: {coord['left']}; 
-                        background-color: rgba(15, 23, 42, 0.95); color: #FFFFFF; 
-                        padding: 2px 6px; border-radius: 4px; font-size: 9px; 
-                        font-weight: bold; border: 1.5px solid {color_borde}; 
-                        transform: translate(-50%, -50%); white-space: nowrap; 
-                        box-shadow: 2px 2px 5px rgba(0,0,0,0.4);">
-                S{sensor_num} ({prof}): {texto_vwc}
-            </div>
+            <a href="{link_target}" target="_top" style="text-decoration: none;">
+                <div style="position: absolute; top: {coord['top']}; left: {coord['left']}; 
+                            background-color: #3B82F6; color: #FFFFFF; 
+                            padding: 2px 5px; border-radius: 3px; font-size: 10px; 
+                            font-weight: bold; border: 1px solid #FFFFFF; 
+                            transform: translate(-50%, -50%); white-space: nowrap; 
+                            box-shadow: 1px 1px 4px rgba(0,0,0,0.4); cursor: pointer;">
+                    📍 {prof_label}
+                </div>
+            </a>
             """
         popup_html += "</div>"
     else:
-        popup_html += f'<p style="color:red; font-size:12px;">⚠️ Falta el archivo visual {cfg["imagen"]} en GitHub para renderizar el perfil de sensores.</p>'
-        
+        popup_html += f'<p style="color:red; font-size:11px;">⚠️ Archivo {cfg["imagen"]} ausente.</p>'
     popup_html += "</div>"
 
-    # --- MAPA SATELITAL ---
-    with col_mapa:
-        st.subheader("🗺️ Ubicación Satelital en Faena")
-        m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
-        folium.TileLayer(
-            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Esri World Imagery',
-            name='Vista Satelital',
-            overlay=False,
-            control=False
-        ).add_to(m)
+    iframe = folium.IFrame(popup_html, width=340, height=440)
+    folium.Marker(
+        [cfg["lat"], cfg["lon"]],
+        popup=folium.Popup(iframe, max_width=360),
+        tooltip=f"Haga clic para ver la Radiografía del Pozo {id_proyecto}",
+        icon=folium.Icon(color="blue", icon="info-sign")
+    ).add_to(m)
 
-        iframe = folium.IFrame(popup_html, width=440, height=540)
-        folium.Marker(
-            [cfg["lat"], cfg["lon"]],
-            popup=folium.Popup(iframe, max_width=460),
-            tooltip=f"Haga clic para abrir la Radiografía de {id_proyecto}",
-            icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(m)
+    st_folium(m, width="100%", height=380, key=f"mapa_{id_proyecto}")
 
-        st_folium(m, width="100%", height=350, key=f"mapa_{id_proyecto}")
-
+    # --- LÓGICA DE CAPTURA DEL SENSOR SELECCIONADO POR CLIC ---
+    parametros = st.query_params
+    sensor_seleccionado = parametros.get("sensor", None)
+    
     st.markdown("---")
     
-    # --- MÉTRICAS GENERALES DE INGENIERÍA ---
-    st.subheader(f"📊 Estado Analítico del Perfil | Registro Seleccionado: {ultima_fecha}")
-    
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric(label="Voltaje del Sistema", value=f"{ultimo_registro.get('Batt_volt_Min', 0.0):.2f} V" if pd.notna(ultimo_registro.get('Batt_volt_Min')) else "N/A")
-    with m2: st.metric(label="Estado de Carga (SOC)", value=f"{ultimo_registro.get('BatterySOC', 0.0):.1f} %" if pd.notna(ultimo_registro.get('BatterySOC')) else "N/A")
-    with m3: st.metric(label="Temperatura Datalogger", value=f"{ultimo_registro.get('PTemp', 0.0):.1f} °C" if pd.notna(ultimo_registro.get('PTemp')) else "N/A")
-    with m4:
-        rain_val = 0.0
-        if df_rain is not None:
-            df_rain_dia = df_rain[df_rain['TIMESTAMP'].dt.date == fecha_sel]
-            if not df_rain_dia.empty: rain_val = df_rain_dia.iloc[-1].get('Rain_day', 0.0)
-        st.metric(label="Precipitación del Día", value=f"{rain_val:.2f} mm" if pd.notna(rain_val) else "N/A")
-
-    # --- TABLA MATRIZ DE SENSORES Y GRÁFICO TENDENCIA ---
-    col_detalles, col_grafico = st.columns([4, 5])
-    
-    with col_detalles:
-        st.markdown("**📋 Matriz Completa de Sensores (Lecturas Físicas)**")
-        tabla_datos = []
-        for idx in range(num_sensores):
-            sensor_label = f"S{idx+1}"
+    # Verificamos si el clic pertenece a la pestaña de la faena que estamos renderizando
+    if sensor_seleccionado and sensor_seleccionado.startswith(f"{id_proyecto}_"):
+        try:
+            idx_seleccionado = int(sensor_seleccionado.split("_")[1]) - 1
+        except:
+            idx_seleccionado = 0
             
-            val_vwc = ultimo_registro.get(cols_vwc[idx], 0.0) if idx < len(cols_vwc) else 0.0
-            val_temp = ultimo_registro.get(cols_temp[idx], 0.0) if idx < len(cols_temp) else 0.0
-            val_pt = ultimo_registro.get(cols_pt[idx], 0.0) if idx < len(cols_pt) else 0.0
-            val_dpt = ultimo_registro.get(cols_dpt[idx], 0.0) if idx < len(cols_dpt) else 0.0
+        if idx_seleccionado >= num_sensores:
+            idx_seleccionado = 0
             
-            profundidad = cols_vwc[idx].split('_')[2] if len(cols_vwc[idx].split('_')) > 2 else "N/A"
-            
-            tabla_datos.append({
-                "Sensor": sensor_label,
-                "Profundidad": profundidad,
-                "Humedad (VWC)": f"{val_vwc:.2f} %" if pd.notna(val_vwc) else "N/A",
-                "Temperatura": f"{val_temp:.1f} °C" if pd.notna(val_temp) else "N/A",
-                "Presión Celda": f"{val_pt:.0f} mbar" if pd.notna(val_pt) else "N/A",
-                "Nivel Fijo": f"{val_dpt:.1f} cm" if pd.notna(val_dpt) else "N/A"
-            })
-        st.dataframe(pd.DataFrame(tabla_datos), hide_index=True, use_container_width=True)
-
-    with col_grafico:
-        st.markdown(f"**📈 Curvas de Variación Temporal (Últimos 7 días)**")
+        # Extraemos los datos del sensor elegido
+        c_vwc = cols_vwc[idx_seleccionado]
+        c_temp = cols_temp[idx_seleccionado]
+        c_pt = cols_pt[idx_seleccionado]
+        c_dpt = cols_dpt[idx_seleccionado]
+        
+        prof_legible = formatear_profundidad(c_vwc)
+        
+        # --- DESPLIEGUE EXCLUSIVO DEL SENSOR AUDITADO ---
+        st.subheader(f"🔍 Auditoría en Profundidad: Sensor S{idx_seleccionado+1} ({prof_legible}) | {id_proyecto}")
+        
+        # Fila 1: Métricas específicas del punto seleccionado
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric(label=f"Humedad Volumétrica (VWC)", value=f"{ultimo_registro.get(c_vwc, 0.0):.2f} %")
+        with m2: st.metric(label="Temperatura del Suelo", value=f"{ultimo_registro.get(c_temp, 0.0):.1f} °C")
+        with m3: st.metric(label="Presión de Poros (Celda)", value=f"{ultimo_registro.get(c_pt, 0.0):.0f} mbar")
+        with m4: st.metric(label="Nivel Hidrostático Fijo", value=f"{ultimo_registro.get(c_dpt, 0.0):.1f} cm")
+        
+        # Fila 2: Gráfico de Tendencia Histórica del Sensor
+        st.markdown(f"**📈 Análisis de Comportamiento Temporal Histórico (Ventana de 7 días)**")
         fecha_max_grafico = pd.Timestamp(fecha_sel)
         fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
         df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
-
+        
         mapeo_variables = {
-            "Humedad (VWC %)": cols_vwc,
-            "Temperatura (°C)": cols_temp,
-            "Presión de Celda (mbar)": cols_pt,
-            "Nivel (cm)": cols_dpt
+            "Humedad (VWC %)": c_vwc,
+            "Temperatura (°C)": c_temp,
+            "Presión de Celda (mbar)": c_pt,
+            "Nivel (cm)": c_dpt
         }
-
-        columnas_grafico = mapeo_variables[variable_grafico]
-        df_grafico = df_filtrado[['TIMESTAMP'] + columnas_grafico].copy()
-        df_grafico.columns = ['Fecha'] + [f"Sensor S{i+1}" for i in range(num_sensores)]
+        
+        columna_objetivo = mapeo_variables[variable_grafico]
+        df_grafico = df_filtrado[['TIMESTAMP', columna_objetivo]].copy()
+        df_grafico.columns = ['Fecha', f"Sensor S{idx_seleccionado+1} ({prof_legible}) - {variable_grafico}"]
         df_grafico.set_index('Fecha', inplace=True)
         st.line_chart(df_grafico, use_container_width=True)
+        
+    else:
+        # Estado inicial o de reposo instructivo
+        st.info(f"💡 **Modo de Espera Activo:** Por favor, expanda el mapa de arriba, haga clic en el marcador azul y seleccione una de las profundidades físicas disponibles (ej: {formatear_profundidad(cols_vwc[0])}) para auditar el comportamiento hidrológico detallado de ese nivel.")
 
-# 6. ASIGNACIÓN DE CONTENIDO A LAS PESTAÑAS
+# 5. ASIGNACIÓN DE CONTENIDO A LAS PESTAÑAS
 with tab_drf:
     construir_interfaz_proyecto("DRF")
 
