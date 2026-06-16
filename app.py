@@ -12,15 +12,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. RUTAS DE LOS ARCHIVOS EN SUPABASE STORAGE
-
-URL_BASE = "https://supabase.com/dashboard/project/jmnmzfybubcasaihmhqb/storage/files"
-
+# 2. CONFIGURACIÓN DE RUTAS DE TUS BUCKETS REALES EN SUPABASE
+# Ajustado a tus dos buckets independientes: "DRF" y "Romeral"
 CONFIG_PROYECTOS = {
     "DRF": {
-        "csv_data": f"{URL_BASE}/drf/DRF.csv",
-        "csv_rain": f"{URL_BASE}/drf/DRFRain.csv",
-        "imagen": "DRF.jpg", 
+        "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRF.csv",
+        "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRFRain.csv",
+        "imagen": "DRR.jpg", # Imagen cargada en GitHub para DRF
         "lat": -28.493772,  
         "lon": -71.254531,  
         "coordenadas_nodos": {
@@ -37,9 +35,9 @@ CONFIG_PROYECTOS = {
         "sufijos_dpt": {1: "1_50cm", 2: "2_152cm", 3: "3_254cm", 4: "4_356cm", 5: "5_459cm", 6: "6_561cm", 7: "7_664cm"}
     },
     "ROMERAL": {
-        "csv_data": f"{URL_BASE}/romeral/DRF.csv", 
-        "csv_rain": f"{URL_BASE}/romeral/DRFRain.csv",
-        "imagen": "Romeral.jpg", 
+        "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRF.csv", 
+        "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRFRain.csv",
+        "imagen": "Romeral.jpg", # Imagen cargada en GitHub para Romeral
         "lat": -29.726153,  
         "lon": -71.221878,  
         "coordenadas_nodos": {
@@ -57,7 +55,6 @@ CONFIG_PROYECTOS = {
     }
 }
 
-# FUNCIÓN BLINDADA: Si no encuentra la imagen, devuelve vacío en vez de romper la app
 def get_base64_image(image_path):
     if os.path.exists(image_path):
         try:
@@ -71,16 +68,23 @@ def get_base64_image(image_path):
 def cargar_datos_proyecto(id_proyecto):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
+        # Descarga el archivo desde el respectivo Bucket de Supabase
         df_data = pd.read_csv(cfg["csv_data"], skiprows=[0, 2, 3])
-        df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'])
+        
+        # Elimina comillas o espacios que puedan venir en el CSV
+        df_data.columns = df_data.columns.str.replace('"', '').str.replace("'", "").str.strip()
+        df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'].astype(str).str.replace('"', ''))
+        
         try:
             df_rain = pd.read_csv(cfg["csv_rain"], skiprows=[0, 2, 3])
-            df_rain['TIMESTAMP'] = pd.to_datetime(df_rain['TIMESTAMP'])
+            df_rain.columns = df_rain.columns.str.replace('"', '').str.replace("'", "").str.strip()
+            df_rain['TIMESTAMP'] = pd.to_datetime(df_rain['TIMESTAMP'].astype(str).str.replace('"', ''))
         except:
             df_rain = None
+            
         return df_data, df_rain, None
     except Exception as e:
-        return None, None, f"Error al conectar con Supabase para {id_proyecto}: {e}"
+        return None, None, f"Error al descargar o procesar los datos desde la nube: {e}"
 
 # 4. BARRA LATERAL (BRANDING CORPORATIVO)
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
@@ -97,7 +101,7 @@ def construir_interfaz_proyecto(id_proyecto):
     
     if error:
         st.error(error)
-        st.info("⚠️ Nota: Verifica que el bucket en Supabase sea público y que la URL contenga el ID correcto de tu proyecto.")
+        st.info("💡 **Ajuste de Supabase requerido:** Asegúrate de que los buckets **'DRF'** y **'Romeral'** estén configurados como **PUBLIC** en las opciones de Supabase Storage, de lo contrario la API bloqueará la descarga.")
         return
 
     # --- MAPA SATELITAL REAL ---
@@ -171,7 +175,7 @@ def construir_interfaz_proyecto(id_proyecto):
             html_content += "</div>"
             st.components.v1.html(html_content, height=620)
         else:
-            st.error(f"❌ Error: No se encontró el archivo visual '{cfg['imagen']}' en la raíz de tu GitHub. Súbelo para activar los nodos flotantes.")
+            st.error(f"❌ Error: No se encontró el archivo visual '{cfg['imagen']}' en tu GitHub. Súbelo con ese nombre exacto respetando mayúsculas.")
 
     with col_detalles:
         st.markdown("**📋 Matriz Completa de Sensores**")
@@ -179,10 +183,10 @@ def construir_interfaz_proyecto(id_proyecto):
         for i in range(1, 8):
             tabla_datos.append({
                 "Sensor": f"S{i}",
-                "Humedad (VWC)": f"{ultimo_registro.get(f'VWC_{cfg["sufijos_vwc"][i]}', 0.0):.2f} %",
-                "Temperatura": f"{ultimo_registro.get(f'TEMP_{cfg["sufijos_vwc"][i]}', 0.0):.1f} °C",
-                "Presión Celda": f"{ultimo_registro.get(f'PT_{cfg["sufijos_pt"][i]}', 0.0):.0f} mbar",
-                "Nivel Fijo": f"{ultimo_registro.get(f'DPT_{cfg["sufijos_dpt"][i]}', 0.0):.1f} cm"
+                "Humedad (VWC)": f"{ultimo_registro.get(f'VWC_{cfg[\"sufijos_vwc\"][i]}', 0.0):.2f} %",
+                "Temperatura": f"{ultimo_registro.get(f'TEMP_{cfg[\"sufijos_vwc\"][i]}', 0.0):.1f} °C",
+                "Presión Celda": f"{ultimo_registro.get(f'PT_{cfg[\"sufijos_pt\"][i]}', 0.0):.0f} mbar",
+                "Nivel Fijo": f"{ultimo_registro.get(f'DPT_{cfg[\"sufijos_dpt\"][i]}', 0.0):.1f} cm"
             })
         st.dataframe(pd.DataFrame(tabla_datos), hide_index=True, use_container_width=True)
 
