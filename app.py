@@ -67,13 +67,13 @@ CONFIG_PROYECTOS = {
         # Coordenadas de pines en % (left%, top%) sobre la imagen del pozo.
         # Ajusta estos valores según las cotas dibujadas en tu DRF.jpg
         "pin_coords": [
-            (50, 18),   # S1 – sensor más superficial
-            (50, 27),   # S2
-            (50, 36),   # S3
-            (50, 45),   # S4
-            (50, 54),   # S5
-            (50, 63),   # S6
-            (50, 72),   # S7 – sensor más profundo
+            (60.2, 42.7),  # S1 – más superficial
+            (55.5, 51.9),
+            (51.2, 59.3),
+            (46.8, 68.3),
+            (42.3, 76.2),
+            (38, 83.8),
+            (33.2, 93.4)  # Sn – más profundo
         ]
     },
     "ROMERAL": {
@@ -85,14 +85,14 @@ CONFIG_PROYECTOS = {
         "max_sensores": 8,
         # Ajusta estos valores según las cotas dibujadas en tu Romeral.jpg
         "pin_coords": [
-            (50, 14),   # S1
-            (50, 22),   # S2
-            (50, 30),   # S3
-            (50, 38),   # S4
-            (50, 46),   # S5
-            (50, 54),   # S6
-            (50, 62),   # S7
-            (50, 72),   # S8
+             (64.3, 38.5),  # S1 – más superficial
+             (60.5, 46.1),
+             (56.6, 53.9),
+             (52.5, 62.1),
+             (48.5, 70.2),
+             (44.4, 77.8),
+             (41.2, 84.9),
+             (37, 93.3)  # Sn – más profundo
         ]
     }
 }
