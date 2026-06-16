@@ -20,7 +20,7 @@ CONFIG_PROYECTOS = {
     "DRF": {
         "csv_data": f"{URL_BASE}/drf/DRF.csv",
         "csv_rain": f"{URL_BASE}/drf/DRFRain.csv",
-        "imagen": "image_393981.jpg", 
+        "imagen": "DRF.jpg", 
         "lat": -28.493772,  
         "lon": -71.254531,  
         "coordenadas_nodos": {
@@ -39,7 +39,7 @@ CONFIG_PROYECTOS = {
     "ROMERAL": {
         "csv_data": f"{URL_BASE}/romeral/DRF.csv", 
         "csv_rain": f"{URL_BASE}/romeral/DRFRain.csv",
-        "imagen": "image_393981.jpg", 
+        "imagen": "Romeral.jpg", 
         "lat": -29.726153,  
         "lon": -71.221878,  
         "coordenadas_nodos": {
