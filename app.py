@@ -14,7 +14,7 @@ st.set_page_config(
 
 # 2. RUTAS DE LOS ARCHIVOS EN SUPABASE STORAGE
 
-URL_BASE = "https://supabase.com/dashboard/project/jmnmzfybubcasaihmhqb"
+URL_BASE = "https://supabase.com/dashboard/project/jmnmzfybubcasaihmhqb/storage/files"
 
 CONFIG_PROYECTOS = {
     "DRF": {
