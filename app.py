@@ -12,12 +12,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. CONFIGURACIÓN DE RUTAS DE TUS BUCKETS REALES EN SUPABASE
+# 2. CONFIGURACIÓN DE RUTAS LOCALES EN TU REPOSITORIO GITHUB
 CONFIG_PROYECTOS = {
     "DRF": {
-        "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRF.csv",
-        "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRFRain.csv",
-        "imagen": "DRR.jpg", 
+        "csv_data": "DRF.csv",
+        "csv_rain": "DRFRain.csv", # Nombre exacto en tu GitHub
+        "imagen": "DRF.jpg", 
         "lat": -28.493772,  
         "lon": -71.254531,  
         "coordenadas_nodos": {
@@ -34,8 +34,8 @@ CONFIG_PROYECTOS = {
         "sufijos_dpt": {1: "1_50cm", 2: "2_152cm", 3: "3_254cm", 4: "4_356cm", 5: "5_459cm", 6: "6_561cm", 7: "7_664cm"}
     },
     "ROMERAL": {
-        "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRF.csv", 
-        "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRFRain.csv",
+        "csv_data": "Romeral.csv", 
+        "csv_rain": "RomeralRain.csv", # Nombre exacto en tu GitHub
         "imagen": "Romeral.jpg", 
         "lat": -29.726153,  
         "lon": -71.221878,  
@@ -67,7 +67,10 @@ def get_base64_image(image_path):
 def cargar_datos_proyecto(id_proyecto):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
+        # Lee el archivo local de GitHub saltando los encabezados de metadatos de Campbell
         df_data = pd.read_csv(cfg["csv_data"], skiprows=[0, 2, 3])
+        
+        # Limpieza de comillas y espacios en las columnas
         df_data.columns = df_data.columns.str.replace('"', '').str.replace("'", "").str.strip()
         df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'].astype(str).str.replace('"', ''))
         
@@ -80,7 +83,7 @@ def cargar_datos_proyecto(id_proyecto):
             
         return df_data, df_rain, None
     except Exception as e:
-        return None, None, f"Error al descargar o procesar los datos desde la nube: {e}"
+        return None, None, f"Error al abrir el archivo {cfg['csv_data']} en el repositorio: {e}"
 
 # 4. BARRA LATERAL (BRANDING CORPORATIVO)
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
@@ -97,7 +100,6 @@ def construir_interfaz_proyecto(id_proyecto):
     
     if error:
         st.error(error)
-        st.info("💡 **Ajuste de Supabase requerido:** Asegúrate de que los buckets **'DRF'** y **'Romeral'** estén configurados como **PUBLIC** en las opciones de Supabase Storage.")
         return
 
     # --- MAPA SATELITAL REAL ---
