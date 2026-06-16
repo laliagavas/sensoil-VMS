@@ -16,7 +16,7 @@ st.set_page_config(
 CONFIG_PROYECTOS = {
     "DRF": {
         "csv_data": "DRF.csv",
-        "csv_rain": "DRFRain.csv", # Nombre exacto en tu GitHub
+        "csv_rain": "DRFRain.csv",
         "imagen": "DRF.jpg", 
         "lat": -28.493772,  
         "lon": -71.254531,  
@@ -35,7 +35,7 @@ CONFIG_PROYECTOS = {
     },
     "ROMERAL": {
         "csv_data": "Romeral.csv", 
-        "csv_rain": "RomeralRain.csv", # Nombre exacto en tu GitHub
+        "csv_rain": "RomeralRain.csv",
         "imagen": "Romeral.jpg", 
         "lat": -29.726153,  
         "lon": -71.221878,  
@@ -67,10 +67,7 @@ def get_base64_image(image_path):
 def cargar_datos_proyecto(id_proyecto):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
-        # Lee el archivo local de GitHub saltando los encabezados de metadatos de Campbell
         df_data = pd.read_csv(cfg["csv_data"], skiprows=[0, 2, 3])
-        
-        # Limpieza de comillas y espacios en las columnas
         df_data.columns = df_data.columns.str.replace('"', '').str.replace("'", "").str.strip()
         df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'].astype(str).str.replace('"', ''))
         
@@ -89,7 +86,7 @@ def cargar_datos_proyecto(id_proyecto):
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
 st.sidebar.title("VMS GeoCloud Dashboard")
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Uso para Clientes:** Navegue entre las pestañas de las faenas mineras, explore el mapa satelital interactivo y seleccione un día de operación en el menú para simular el comportamiento histórico.")
+st.sidebar.info("💡 **Uso para Clientes:** Navegue entre las pestañas de las faenas mineras, explore el mapa satelital interactivo y haga clic en el marcador azul para desplegar la radiografía de perforación en tiempo real.")
 
 # 5. ESTRUCTURA DE PESTAÑAS PRINCIPALES
 tab_drf, tab_romeral = st.tabs(["📍 Estación DRF Chile", "📍 Estación El Romeral"])
@@ -102,47 +99,89 @@ def construir_interfaz_proyecto(id_proyecto):
         st.error(error)
         return
 
-    # --- MAPA SATELITAL REAL ---
-    st.subheader("🗺️ Ubicación Satelital en Faena")
-    
-    m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
-    folium.TileLayer(
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri World Imagery',
-        name='Vista Satelital',
-        overlay=False,
-        control=False
-    ).add_to(m)
-
-    popup_text = f"""
-    <div style='font-family: Arial, sans-serif; width: 200px;'>
-        <h4 style='color:#007BFF; margin-bottom:5px;'>Sistema VMS Sensoil</h4>
-        <p style='margin:0;'><b>Faena:</b> {id_proyecto}</p>
-        <p style='margin:0;'><b>Estado:</b> Conectado Cloud</p>
-    </div>
-    """
-    folium.Marker(
-        [cfg["lat"], cfg["lon"]],
-        popup=popup_text,
-        tooltip=f"Ver Estación {id_proyecto}",
-        icon=folium.Icon(color="blue", icon="info-sign")
-    ).add_to(m)
-
-    st_folium(m, width="100%", height=320, key=f"mapa_{id_proyecto}")
-    st.markdown("---")
-    
+    # --- CARGA Y PROCESAMIENTO DE DATOS DEL DÍA ---
     fechas_disponibles = df_data['TIMESTAMP'].dt.date.unique()
     
-    col_ctrl1, col_ctrl2 = st.columns([4, 4])
-    with col_ctrl1:
-        fecha_sel = st.selectbox(f"Selecciona un día histórico para la Demostración ({id_proyecto}):", sorted(fechas_disponibles, reverse=True), key=f"sel_fecha_{id_proyecto}")
-    with col_ctrl2:
+    # Organizamos la cabecera en dos columnas principales: Mapa a la izquierda, Controles a la derecha
+    col_mapa, col_controles = st.columns([5, 3])
+    
+    with col_controles:
+        st.markdown("### ⚙️ Panel de Control")
+        fecha_sel = st.selectbox(f"Selecciona fecha de simulación ({id_proyecto}):", sorted(fechas_disponibles, reverse=True), key=f"sel_fecha_{id_proyecto}")
         variable_grafico = st.selectbox("Variable para Tendencia Histórica:", ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"], key=f"sel_var_{id_proyecto}")
+        st.info("🎯 **Tip comercial:** Haz clic en el marcador azul del mapa satelital para ver la radiografía interactiva en profundidad con los datos de esta fecha.")
 
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
     ultimo_registro = df_dia.iloc[-1]
     ultima_fecha = ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')
 
+    # --- GENERACIÓN DE LA RADIOGRAFÍA DENTRO DEL POPUP DEL MAPA ---
+    img_b64 = get_base64_image(cfg["imagen"])
+    
+    # Construimos el contenedor HTML que vivirá dentro del marcador del mapa
+    popup_html = f"""
+    <div style="font-family: 'Arial', sans-serif; width: 420px; max-height: 520px; overflow-y: auto; padding: 5px;">
+        <h4 style="color: #0F172A; margin-top: 0; margin-bottom: 8px; border-bottom: 2px solid #3B82F6; padding-bottom: 4px;">
+            🌍 Radiografía VMS - Perfil {id_proyecto}
+        </h4>
+        <p style="font-size: 11px; color: #64748B; margin: 0 0 10px 0;"><b>Registro:</b> {ultima_fecha}</p>
+    """
+    
+    if img_b64:
+        popup_html += f"""
+        <div style="position: relative; width: 100%; max-width: 380px; margin: auto;">
+            <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 6px; display: block;">
+        """
+        # Renderizamos los 7 sensores flotando sobre la imagen dentro del Popup
+        for i in range(1, 8):
+            sufijo = cfg["sufijos_vwc"][i]
+            vwc = ultimo_registro.get(f"VWC_{sufijo}", 0.0)
+            coord = cfg["coordenadas_nodos"][i]
+            color_borde = "#28A745" if vwc >= 0 else "#DC3545"
+            texto_vwc = f"{vwc:.1f}%" if vwc >= 0 else "ERROR"
+            
+            popup_html += f"""
+            <div style="position: absolute; top: {coord['top']}; left: {coord['left']}; 
+                        background-color: rgba(15, 23, 42, 0.95); color: #FFFFFF; 
+                        padding: 2px 6px; border-radius: 4px; font-size: 10px; 
+                        font-weight: bold; border: 1.5px solid {color_borde}; 
+                        transform: translate(-50%, -50%); white-space: nowrap; 
+                        box-shadow: 2px 2px 5px rgba(0,0,0,0.4);">
+                S{i}: {texto_vwc}
+            </div>
+            """
+        popup_html += "</div>"
+    else:
+        popup_html += f'<p style="color:red;">Falta imagen {cfg["imagen"]} en GitHub para renderizar perfil.</p>'
+        
+    popup_html += "</div>"
+
+    # --- RENDERIZADO DEL MAPA SATELITAL ---
+    with col_mapa:
+        st.subheader("🗺️ Ubicación Satelital en Faena")
+        m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
+        folium.TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri World Imagery',
+            name='Vista Satelital',
+            overlay=False,
+            control=False
+        ).add_to(m)
+
+        # Agregamos el iframe con la radiografía interactiva al marcador
+        iframe = folium.IFrame(popup_html, width=440, height=540)
+        folium.Marker(
+            [cfg["lat"], cfg["lon"]],
+            popup=folium.Popup(iframe, max_width=460),
+            tooltip=f"Haga clic para ver Radiografía {id_proyecto}",
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(m)
+
+        st_folium(m, width="100%", height=350, key=f"mapa_{id_proyecto}")
+
+    st.markdown("---")
+    
+    # --- BLOQUE DE MÉTRICAS ANALÍTICAS ---
     st.subheader(f"📊 Estado Analítico del Perfil | Registro Seleccionado: {ultima_fecha}")
     
     m1, m2, m3, m4 = st.columns(4)
@@ -156,26 +195,9 @@ def construir_interfaz_proyecto(id_proyecto):
             if not df_rain_dia.empty: rain_val = df_rain_dia.iloc[-1].get('Rain_day', 0.0)
         st.metric(label="Precipitación del Día", value=f"{rain_val:.2f} mm")
 
-    # --- RADIOGRAFÍA INTERACTIVA ---
-    col_img, col_detalles = st.columns([5, 3])
+    # --- TABLA MATRIZ DE SENSORES Y GRÁFICO TENDENCIA ---
+    col_detalles, col_grafico = st.columns([3, 5])
     
-    with col_img:
-        st.markdown("**🔍 Radiografía de Perforación (Monitoreo en Profundidad VMS)**")
-        img_b64 = get_base64_image(cfg["imagen"])
-        if img_b64:
-            html_content = f'<div style="position: relative; width: 100%; max-width: 500px; margin: auto;"><img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 8px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15);">'
-            for i in range(1, 8):
-                sufijo = cfg["sufijos_vwc"][i]
-                vwc = ultimo_registro.get(f"VWC_{sufijo}", 0.0)
-                coord = cfg["coordenadas_nodos"][i]
-                color_borde = "#28A745" if vwc >= 0 else "#DC3545"
-                texto_vwc = f"{vwc:.1f}%" if vwc >= 0 else "ERROR"
-                html_content += f'<div style="position: absolute; top: {coord["top"]}; left: {coord["left"]}; background-color: rgba(15, 23, 42, 0.95); color: #FFFFFF; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 2px solid {color_borde}; transform: translate(-50%, -50%); white-space: nowrap; box-shadow: 2px 2px 6px rgba(0,0,0,0.3);">S{i}: {texto_vwc}</div>'
-            html_content += "</div>"
-            st.components.v1.html(html_content, height=620)
-        else:
-            st.error(f"❌ Error: No se encontró el archivo visual '{cfg['imagen']}' en tu GitHub.")
-
     with col_detalles:
         st.markdown("**📋 Matriz Completa de Sensores**")
         tabla_datos = []
@@ -198,25 +220,24 @@ def construir_interfaz_proyecto(id_proyecto):
             })
         st.dataframe(pd.DataFrame(tabla_datos), hide_index=True, use_container_width=True)
 
-    # --- GRÁFICO HISTÓRICO ---
-    st.markdown("---")
-    st.markdown(f"**📈 Curvas de Variación Temporal (Ventana de 7 días hacia atrás)**")
-    fecha_max_grafico = pd.Timestamp(fecha_sel)
-    fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
-    df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
+    with col_grafico:
+        st.markdown(f"**📈 Curvas de Variación Temporal (Últimos 7 días)**")
+        fecha_max_grafico = pd.Timestamp(fecha_sel)
+        fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
+        df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
 
-    mapeo_variables = {
-        "Humedad (VWC %)": [f"VWC_{cfg['sufijos_vwc'][i]}" for i in range(1, 8)],
-        "Temperatura (°C)": [f"TEMP_{cfg['sufijos_vwc'][i]}" for i in range(1, 8)],
-        "Presión de Celda (mbar)": [f"PT_{cfg['sufijos_pt'][i]}" for i in range(1, 8)],
-        "Nivel (cm)": [f"DPT_{cfg['sufijos_dpt'][i]}" for i in range(1, 8)]
-    }
+        mapeo_variables = {
+            "Humedad (VWC %)": [f"VWC_{cfg['sufijos_vwc'][i]}" for i in range(1, 8)],
+            "Temperatura (°C)": [f"TEMP_{cfg['sufijos_vwc'][i]}" for i in range(1, 8)],
+            "Presión de Celda (mbar)": [f"PT_{cfg['sufijos_pt'][i]}" for i in range(1, 8)],
+            "Nivel (cm)": [f"DPT_{cfg['sufijos_dpt'][i]}" for i in range(1, 8)]
+        }
 
-    columnas_grafico = mapeo_variables[variable_grafico]
-    df_grafico = df_filtrado[['TIMESTAMP'] + columnas_grafico].copy()
-    df_grafico.columns = ['Fecha'] + [f"Sensor S{i}" for i in range(1, 8)]
-    df_grafico.set_index('Fecha', inplace=True)
-    st.line_chart(df_grafico, use_container_width=True)
+        columnas_grafico = mapeo_variables[variable_grafico]
+        df_grafico = df_filtrado[['TIMESTAMP'] + columnas_grafico].copy()
+        df_grafico.columns = ['Fecha'] + [f"Sensor S{i}" for i in range(1, 8)]
+        df_grafico.set_index('Fecha', inplace=True)
+        st.line_chart(df_grafico, use_container_width=True)
 
 # 6. ASIGNACIÓN DE CONTENIDO A LAS PESTAÑAS
 with tab_drf:
