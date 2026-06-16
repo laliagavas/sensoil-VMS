@@ -13,12 +13,11 @@ st.set_page_config(
 )
 
 # 2. CONFIGURACIÓN DE RUTAS DE TUS BUCKETS REALES EN SUPABASE
-# Ajustado a tus dos buckets independientes: "DRF" y "Romeral"
 CONFIG_PROYECTOS = {
     "DRF": {
         "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRF.csv",
         "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/DRF/DRFRain.csv",
-        "imagen": "DRR.jpg", # Imagen cargada en GitHub para DRF
+        "imagen": "DRR.jpg", 
         "lat": -28.493772,  
         "lon": -71.254531,  
         "coordenadas_nodos": {
@@ -37,7 +36,7 @@ CONFIG_PROYECTOS = {
     "ROMERAL": {
         "csv_data": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRF.csv", 
         "csv_rain": "https://jmnmzfybubcasaihmhqb.supabase.co/storage/v1/object/public/Romeral/DRFRain.csv",
-        "imagen": "Romeral.jpg", # Imagen cargada en GitHub para Romeral
+        "imagen": "Romeral.jpg", 
         "lat": -29.726153,  
         "lon": -71.221878,  
         "coordenadas_nodos": {
@@ -68,10 +67,7 @@ def get_base64_image(image_path):
 def cargar_datos_proyecto(id_proyecto):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
-        # Descarga el archivo desde el respectivo Bucket de Supabase
         df_data = pd.read_csv(cfg["csv_data"], skiprows=[0, 2, 3])
-        
-        # Elimina comillas o espacios que puedan venir en el CSV
         df_data.columns = df_data.columns.str.replace('"', '').str.replace("'", "").str.strip()
         df_data['TIMESTAMP'] = pd.to_datetime(df_data['TIMESTAMP'].astype(str).str.replace('"', ''))
         
@@ -101,7 +97,7 @@ def construir_interfaz_proyecto(id_proyecto):
     
     if error:
         st.error(error)
-        st.info("💡 **Ajuste de Supabase requerido:** Asegúrate de que los buckets **'DRF'** y **'Romeral'** estén configurados como **PUBLIC** en las opciones de Supabase Storage, de lo contrario la API bloqueará la descarga.")
+        st.info("💡 **Ajuste de Supabase requerido:** Asegúrate de que los buckets **'DRF'** y **'Romeral'** estén configurados como **PUBLIC** en las opciones de Supabase Storage.")
         return
 
     # --- MAPA SATELITAL REAL ---
@@ -167,7 +163,8 @@ def construir_interfaz_proyecto(id_proyecto):
         if img_b64:
             html_content = f'<div style="position: relative; width: 100%; max-width: 500px; margin: auto;"><img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 8px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15);">'
             for i in range(1, 8):
-                vwc = ultimo_registro.get(f"VWC_{cfg['sufijos_vwc'][i]}", 0.0)
+                sufijo = cfg["sufijos_vwc"][i]
+                vwc = ultimo_registro.get(f"VWC_{sufijo}", 0.0)
                 coord = cfg["coordenadas_nodos"][i]
                 color_borde = "#28A745" if vwc >= 0 else "#DC3545"
                 texto_vwc = f"{vwc:.1f}%" if vwc >= 0 else "ERROR"
@@ -175,18 +172,27 @@ def construir_interfaz_proyecto(id_proyecto):
             html_content += "</div>"
             st.components.v1.html(html_content, height=620)
         else:
-            st.error(f"❌ Error: No se encontró el archivo visual '{cfg['imagen']}' en tu GitHub. Súbelo con ese nombre exacto respetando mayúsculas.")
+            st.error(f"❌ Error: No se encontró el archivo visual '{cfg['imagen']}' en tu GitHub.")
 
     with col_detalles:
         st.markdown("**📋 Matriz Completa de Sensores**")
         tabla_datos = []
         for i in range(1, 8):
+            suf_vwc = cfg["sufijos_vwc"][i]
+            suf_pt = cfg["sufijos_pt"][i]
+            suf_dpt = cfg["sufijos_dpt"][i]
+            
+            val_vwc = ultimo_registro.get(f"VWC_{suf_vwc}", 0.0)
+            val_temp = ultimo_registro.get(f"TEMP_{suf_vwc}", 0.0)
+            val_pt = ultimo_registro.get(f"PT_{suf_pt}", 0.0)
+            val_dpt = ultimo_registro.get(f"DPT_{suf_dpt}", 0.0)
+            
             tabla_datos.append({
                 "Sensor": f"S{i}",
-                "Humedad (VWC)": f"{ultimo_registro.get(f'VWC_{cfg[\"sufijos_vwc\"][i]}', 0.0):.2f} %",
-                "Temperatura": f"{ultimo_registro.get(f'TEMP_{cfg[\"sufijos_vwc\"][i]}', 0.0):.1f} °C",
-                "Presión Celda": f"{ultimo_registro.get(f'PT_{cfg[\"sufijos_pt\"][i]}', 0.0):.0f} mbar",
-                "Nivel Fijo": f"{ultimo_registro.get(f'DPT_{cfg[\"sufijos_dpt\"][i]}', 0.0):.1f} cm"
+                "Humedad (VWC)": f"{val_vwc:.2f} %",
+                "Temperatura": f"{val_temp:.1f} °C",
+                "Presión Celda": f"{val_pt:.0f} mbar",
+                "Nivel Fijo": f"{val_dpt:.1f} cm"
             })
         st.dataframe(pd.DataFrame(tabla_datos), hide_index=True, use_container_width=True)
 
