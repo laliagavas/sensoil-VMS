@@ -1,0 +1,613 @@
+'CR1000X Series Datalogger
+
+'Chile - DRF
+'Date: 03/09/2025
+'Program author: Yonatan Dahan
+'Edited:
+'10/03/2026 by Tomer - FTDT new calibration, 
+'                    - 40sec sending to FTP
+'                    - opposite order sending to FTP
+
+
+'ComPorts Configuration:
+'C1 - Screen Communication
+'C2 - Screen Communication
+'C3 - TDT + DPT sensor Measurment
+'C4 - DIsplay Button trigger
+'C5 - DIsplay 5V Operator
+'C6 - PT sensor operator
+'C7 - EPever B
+'C8 - EPever A
+
+'Single Ended Ports Configuration:
+'SE 1 to 8 - CPT (Cell pressure)
+'SE 10 to 16 - APT (Analog Level)
+
+'Power supply configurations:
+'SW12_1 - TDT
+'SW12_2 - DPT
+'SWVX1 - APT_EX + APT_2
+'SWVX2 - APT_3 + APT_4
+'SWVX3 - APT_5 + APT_6
+'SWVX4 - APT_7 + APT_8
+
+
+
+
+'put in a bottun that turns on the TDT DPT AND PT sensors
+'Put in a buttun For sending FTP files
+
+PreserveVariables
+Dim i
+
+Public PTemp      : Units PTemp= Deg C
+Public Batt_volt  : Units Batt_volt= Volts
+
+Public Sensors_ON As Boolean
+
+Public rTime(9)
+Alias rTime(1) = Year
+Alias rTime(2) = Month
+Alias rTime(3) = DOM
+Alias rTime(4) = Hour
+Alias rTime(5) = Minute
+''''''''''''''''''''''FTP''''''''''''''''''''
+
+Public FTPResultDRF
+Public FTPResultDRF_Raw
+Public FTPResultRain
+Public FTPResultTest
+Public FTPResultMonitor
+
+Const Server = "10.24.64.71:30001"
+Const User = "drf"
+Const Pass = "fjfagur1rfag"
+
+Public SendTest As Boolean
+Public SendFiles As Boolean
+
+''''''''''''''''''''''EPever - Charging controler''''''''''''''''''''
+
+Public BatterySOC_raw As Long''311A  12570
+Public BatterySOC As Float                    :Units BatterySOC=%
+Public SOCResult
+
+''''''''''''''''''''''''''Nextion Display screen''''''''''''''''
+
+Public PushButton As Boolean
+Public ButtonStatus
+Public counter
+
+Public instring As String
+Public pageState As String * 1
+Public station_time As String * 100
+
+Public home_t0 As String * 100
+Public home_t1 As String * 100
+Public home_t2 As String * 100
+
+Public water_t0 As String * 100
+Public water_t1 As String * 100
+Public water_t2 As String * 100
+Public water_t3 As String * 100
+Public water_t4 As String * 100
+Public water_t5 As String * 100
+Public water_t6 As String * 100
+
+Public level_t0 As String * 100
+Public level_t1 As String * 100
+Public level_t2 As String * 100
+Public level_t3 As String * 100
+Public level_t4 As String * 100
+Public level_t5 As String * 100
+Public level_t6 As String * 100
+
+Public cell_t7 As String * 100
+Public cell_t8 As String * 100
+Public cell_t9 As String * 100
+Public cell_t10 As String * 100
+Public cell_t11 As String * 100
+Public cell_t12 As String * 100
+Public cell_t13 As String * 100
+
+
+
+
+''''''''''''''''''''''''''Rain''''''''''''''''''''
+
+Public pulse
+Public Pulse_Count
+Public Rain_hr   : Units Rain_hr = mm/hr
+Public Rain_day  : Units Rain_day = mm/day
+
+'''''''''''''''''''''''''TDT''''''''''''''''''''''''
+
+Public Add (16) As String ={"1","2","3","4","5","6","7","A","B","C","D","E","F","G"}
+Public TDT (7,4)
+Public rTDT(7)
+Public CTDT(7)
+Public TDTtemp(7)
+Public TDTper(7)
+
+
+Alias rTDT(1)=VWC_r1_40cm  : Units VWC_r1_40cm = %
+Alias rTDT(2)=VWC_r2_82cm  : Units VWC_r2_82cm = %
+Alias rTDT(3)=VWC_r3_184cm  : Units VWC_r3_184cm = %
+Alias rTDT(4)=VWC_r4_287cm  : Units VWC_r4_287cm = %
+Alias rTDT(5)=VWC_r5_389cm  : Units VWC_r5_389cm = %
+Alias rTDT(6)=VWC_r6_491cm  : Units VWC_r6_491cm = %
+Alias rTDT(7)=VWC_r7_594cm  : Units VWC_r7_594cm = %
+
+Alias CTDT(1)=VWC_1_40cm  : Units VWC_1_40cm = %
+Alias CTDT(2)=VWC_2_82cm  : Units VWC_2_82cm = %
+Alias CTDT(3)=VWC_3_184cm  : Units VWC_3_184cm = %
+Alias CTDT(4)=VWC_4_287cm  : Units VWC_4_287cm = %
+Alias CTDT(5)=VWC_5_389cm  : Units VWC_5_389cm = %
+Alias CTDT(6)=VWC_6_491cm  : Units VWC_6_491cm = %
+Alias CTDT(7)=VWC_7_594cm  : Units VWC_7_594cm = %
+
+Alias TDTtemp(1)=TEMP_1_40cm  : Units TEMP_1_40cm = Deg C
+Alias TDTtemp(2)=TEMP_2_40cm  : Units TEMP_2_40cm = Deg C
+Alias TDTtemp(3)=TEMP_3_40cm  : Units TEMP_3_40cm = Deg C
+Alias TDTtemp(4)=TEMP_4_40cm  : Units TEMP_4_40cm = Deg C
+Alias TDTtemp(5)=TEMP_5_40cm  : Units TEMP_5_40cm = Deg C
+Alias TDTtemp(6)=TEMP_6_40cm  : Units TEMP_6_40cm = Deg C
+Alias TDTtemp(7)=TEMP_7_40cm  : Units TEMP_7_40cm = Deg C
+
+Alias TDTper(1)=PER_1_40cm  : Units PER_1_40cm = unit
+Alias TDTper(2)=PER_2_82cm  : Units PER_2_82cm = unit
+Alias TDTper(3)=PER_3_184cm  : Units PER_3_184cm = unit
+Alias TDTper(4)=PER_4_287cm  : Units PER_4_287cm = unit
+Alias TDTper(5)=PER_5_389cm  : Units PER_5_389cm = unit
+Alias TDTper(6)=PER_6_491cm  : Units PER_6_491cm = unit
+Alias TDTper(7)=PER_7_594cm  : Units PER_7_594cm = unit
+
+
+'''''''''''''''''''''''''''''Cell Pressure, sensor model - MPXHZ6400A ''''''''''''''''
+
+Public PTSet As Boolean
+Public CPTdiff (7)
+
+'' calibration formula - y = 0.8261x + 0.0348
+Const pta =0.8261
+Const ptb =0.0348
+Public PT (7)
+Public CPT(7)
+
+
+Alias PT(1)=rPT_1_40cm  : Units rPT_1_40cm=mV
+Alias PT(2)=rPT_2_123cm  : Units rPT_2_123cm=mV
+Alias PT(3)=rPT_3_225cm  : Units rPT_3_225cm=mV
+Alias PT(4)=rPT_4_328cm  : Units rPT_4_328cm=mV
+Alias PT(5)=rPT_5_430cm  : Units rPT_5_430cm=mV
+Alias PT(6)=rPT_6_532cm  : Units rPT_6_532cm=mV
+Alias PT(7)=rPT_7_635cm  : Units rPT_7_635cm=mV
+
+Alias CPT(1)=PT_1_40cm  : Units PT_1_40cm=mBar
+Alias CPT(2)=PT_2_123cm  : Units PT_2_123cm=mBar
+Alias CPT(3)=PT_3_225cm  : Units PT_3_225cm=mBar
+Alias CPT(4)=PT_4_328cm  : Units PT_4_328cm=mBar
+Alias CPT(5)=PT_5_430cm  : Units PT_5_430cm=mBar
+Alias CPT(6)=PT_6_532cm  : Units PT_6_532cm=mBar
+Alias CPT(7)=PT_7_635cm  : Units PT_7_635cm=mBar
+
+'''''''''''''''''''''''''''''''''Digital and Analog Level Sensors''''''''''''''''
+'Digital sensor - Holykell HPT603
+Public DPTm (7,3)
+Public DPTcm (7)
+Alias DPTcm(1)=DPT_1_50cm  : Units DPT_1_50cm=cm
+Alias DPTcm(2)=DPT_2_152cm  : Units DPT_2_152cm=cm
+Alias DPTcm(3)=DPT_3_254cm  : Units DPT_3_254cm=cm
+Alias DPTcm(4)=DPT_4_356cm  : Units DPT_4_356cm=cm
+Alias DPTcm(5)=DPT_5_459cm  : Units DPT_5_459cm=cm
+Alias DPTcm(6)=DPT_6_561cm  : Units DPT_6_561cm=cm
+Alias DPTcm(7)=DPT_7_664cm  : Units DPT_7_664cm=cm
+
+'Analog sensor - MPXHZ6130A
+Const apta =0.271  ''Calibration Formula - y = 0.271x + 12.608
+Const aptb =12.608
+Public rAPT(7)
+Public CAPT(7)
+
+
+Alias rAPT(1)=rAPT_EX     : Units rAPT_EX=mV
+Alias rAPT(2)=rAPT_2_152cm  : Units rAPT_2_152cm=mV  '' No APT_1 Due to lack of SE ports on the data logger
+Alias rAPT(3)=rAPT_3_254cm  : Units rAPT_3_254cm=mV
+Alias rAPT(4)=rAPT_4_356cm  : Units rAPT_4_356cm=mV
+Alias rAPT(5)=rAPT_5_459cm  : Units rAPT_5_459cm=mV
+Alias rAPT(6)=rAPT_6_561cm  : Units rAPT_6_561cm=mV
+Alias rAPT(7)=rAPT_7_664cm  : Units rAPT_7_664cm=mV
+
+Alias CAPT(1)=APT_EX     : Units APT_EX=cm
+Alias CAPT(2)=APT_2_152cm  : Units APT_2_152cm=cm
+Alias CAPT(3)=APT_3_254cm  : Units APT_3_254cm=cm
+Alias CAPT(4)=APT_4_356cm  : Units APT_4_356cm=cm
+Alias CAPT(5)=APT_5_459cm  : Units APT_5_459cm=cm
+Alias CAPT(6)=APT_6_561cm  : Units APT_6_561cm=cm
+Alias CAPT(7)=APT_7_664cm  : Units APT_7_664cm=cm
+
+''''''''''''''''''''''''''''''Declare DataTables'''''''''''''''''''''''
+DataTable (DRF,1,-1)
+  Minimum (1,Batt_volt,FP2,False,False)
+  Sample (1,BatterySOC,FP2) ''311A  12570
+  Sample (1,PTemp,FP2)
+  Sample (7,CTDT(1),FP2)
+  Sample (7,CPT(1),FP2)
+  Sample (7,TDTtemp(1),FP2)
+  Sample (7,DPTcm(1),FP2)
+  Sample (7,CAPT(1),FP2)
+EndTable
+DataTable (DRF_RawData,1,-1)
+  Sample (7,rTDT(1),FP2)
+  Sample (7,TDTper(1),FP2)
+  Sample (7,PT(1),FP2)
+  Sample (7,rAPT(1),FP2)
+EndTable
+DataTable (DRF_Rain,1,-1)
+  Sample (1,Rain_hr,FP2)
+  Sample (1,Rain_day,FP2)
+EndTable
+DataTable (FtpTest,1,-1)
+  Minimum (1,Batt_volt,FP2,False,False)
+  Sample (1,PTemp,FP2)
+  Sample (1,FTPResultTest,FP2)
+EndTable
+DataTable (FTPMonitor,1,-1)
+  Minimum (1,Batt_volt,FP2,False,False)
+  Sample (1,FTPResultDRF,FP2)
+  Sample (1,FTPResultDRF_Raw,FP2)
+  Sample (1,FTPResultRain,FP2)
+EndTable
+'Main Program
+
+BeginProg
+
+  SerialOpen (ComC1,9600,23,0,1000) '''''  open com port for dispay
+  PortSet (C5,0 )     '' Display 5 volt operator set to off
+  pageState="H"       '''set logger for home page on the Display
+  SW12 (SW12_1,1)    '''set TDT 12V to on
+  SW12 (SW12_2,1)    '''set DPT 12V to on
+  PortSet (C6,1)''PT 5 volt on
+
+  Scan (500,mSec,0,0)
+
+    PulseCount (pulse,1,P1 ,1,0,1,0) ''''Rain Gauge
+
+    PortGet (ButtonStatus,C4)'' Get Display trigger button Status
+
+    If ButtonStatus Then
+      PushButton = True
+      PortSet (C5,1 )  ''Display On
+
+    EndIf
+    SerialIn (instring,ComC1,20,0,1) ''''''' listening for page state
+
+    If instring="W" Then  ''Water VWC
+      pageState="W"
+    ElseIf instring="I" Then ''' Sensoil Information
+      pageState="I"
+    ElseIf instring="H" Then  '''Home menu
+      pageState="H"
+    ElseIf instring="C" Then   '' Cell Pressure + Level
+      pageState="C"
+    EndIf
+    SerialFlush (ComC1)
+
+    If PushButton =False Then  ''' No one pressed the button and the display is off
+
+      '''''''''''''''''''''''''''''''''' RAIN '''''''''''''''''''''''''''''''
+      Pulse_Count = Pulse_Count + pulse            '' If rain is pouring then pulses are summed
+
+      If IfTime (0,60,Min) AND Pulse_Count >0 Then   '''(0,60,Min)
+        Rain_hr = Pulse_Count * 0.2794             '''''''''''(0.2794 mm)
+        Rain_day = Rain_day + Rain_hr
+        CallTable DRF_Rain
+        Pulse_Count = 0
+        Rain_hr =0
+
+      EndIf
+
+      If IfTime (0,1440,Min) Then  ''''(0,1440,Min)
+        CallTable DRF_Rain
+        Rain_day = 0
+      EndIf
+
+      If IfTime (14,15,Min) Then  '' Turn on PT, TDT and DPT before reading
+        Sensors_ON = True
+      EndIf
+
+      If IfTime (0,15,Min) Then '' Main Data save - Interval 15 min
+
+        PanelTemp (PTemp,15000)
+        Battery (Batt_volt)
+        '''''''''''''''''''EPEver Charging controler data''''''''''''''''''''
+		    ModbusClient (SOCResult,ComC7,115200,1,4,BatterySOC_raw,12571,1,3,300)
+		    BatterySOC=BatterySOC_raw/100
+		    
+        '''''''''''''''''' ''Cell Pressure Sensors MPXHZ6400A y = 0.8261x + 0.0348
+
+        VoltSe (PT(),7,mV5000,1,1,0,50,1,0) ''mvolt
+
+        For i =1 To 7
+          CPT(i)= PT(i)*pta+ptb+CPTdiff(i) ''' mv to mbar
+        Next i
+        ''''''''''''''''''TDT measurement, calibration, Thresholds and data save''''''''''''''''''''
+
+        For i =1 To 7
+          SDI12Recorder (TDT(i,1),C3,Add(i),"M!",1.0,0)
+        Next i
+        '6011557	TDT1	Unmodified TDT sensor
+        CTDT(1) = TDT(1,1)
+
+        '6011285	FTDT2		y = 0.09319x^2 - 0.30805x - 4.25764
+
+        CTDT(2) = (TDT(2,1)^2*0.09319) - (TDT(2,1)*0.30805) - 4.25764
+
+
+        If CTDT(2) > 100 OR TDT(2,1) < 0 Then
+          CTDT(2) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(2) > 60 Then
+          CTDT(2) = 60
+        ElseIf CTDT(2) < 5 Then
+          CTDT(2) = 5
+        EndIf
+
+        '6011551	FTDT3		y = 0.05669x^2 + 0.59285x - 7.69684
+
+        CTDT(3) = (TDT(3,1)^2*0.05669) + (TDT(3,1)*0.59285) - 7.69684
+
+        If CTDT(3) > 100 OR TDT(3,1) < 0 Then
+          CTDT(3) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(3) > 60 Then
+          CTDT(3) = 60
+        ElseIf CTDT(3) < 5 Then
+          CTDT(3) = 5
+        EndIf
+
+
+        '6011554	FTDT4		y = 0.08789x^2 - 0.44115x - 3.38324
+
+        CTDT(4) = (TDT(4,1)^2*0.08789) - (TDT(4,1)*0.44115) - 3.38324
+
+        If CTDT(4) > 100 OR TDT(4,1) < 0 Then
+          CTDT(4) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(4) > 60 Then
+          CTDT(4) = 60
+        ElseIf CTDT(4) < 5 Then
+          CTDT(4) = 5
+        EndIf
+        
+        '6011503	FTDT5		y = 0.08309x^2 - 0.26495x - 4.29024
+
+        CTDT(5) = (TDT(5,1)^2*0.08309) - (TDT(5,1)*0.26495) - 4.29024
+        
+        If CTDT(5) > 100 OR TDT(5,1) < 0 Then
+          CTDT(5) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(5) > 60 Then
+          CTDT(5) = 60
+        ElseIf CTDT(5) < 5 Then
+          CTDT(5) = 5
+        EndIf
+        
+        '6011504	FTDT6		y = 0.07359x^2 + 0.06015x - 5.69804
+
+        CTDT(6) = (TDT(6,1)^2*0.07359) + (TDT(6,1)*0.06015) - 5.69804
+
+        If CTDT(6) > 100 OR TDT(6,1) < 0 Then
+          CTDT(6) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(6) > 60 Then
+          CTDT(6) = 60
+        ElseIf CTDT(6) < 5 Then
+          CTDT(6) = 5
+        EndIf
+    
+        '6010314	FTDT7		y = 0.06589x^2 + 0.15965x - 6.65364
+
+        CTDT(7) = (TDT(7,1)^2*0.06589) + (TDT(7,1)*0.15965) - 6.65364    
+
+        If CTDT(7) > 100 OR TDT(7,1) < 0 Then
+          CTDT(7) = -1        '''' -1 declares a wrong reading
+        ElseIf CTDT(7) > 60 Then
+          CTDT(7) = 60
+        ElseIf CTDT(7) < 5 Then
+          CTDT(7) = 5
+        EndIf
+
+        For i =1 To 7
+          rTDT(i)= TDT(i,1)
+        Next i
+
+        For i =1 To 7
+          TDTtemp(i)= TDT(i,2)
+        Next i
+
+        For i =1 To 7
+          TDTper(i)= TDT(i,3)
+        Next i
+        '''''''''''''''''''''' DPT Measurment and data sve '''''''''''''''''''''''''''''
+        SDI12Recorder (DPTm(1,1),C3,"A","M!",1.0,0)
+        SDI12Recorder (DPTm(2,1),C3,"B","M!",1.0,0)
+        SDI12Recorder (DPTm(3,1),C3,"C","M!",1.0,0)
+        SDI12Recorder (DPTm(4,1),C3,"D","M!",1.0,0)
+        SDI12Recorder (DPTm(5,1),C3,"E","M!",1.0,0)
+        SDI12Recorder (DPTm(6,1),C3,"F","M!",1.0,0)
+        SDI12Recorder (DPTm(7,1),C3,"G","M!",1.0,0)
+
+        For i=1 To 7
+          DPTcm(i) = DPTm(i,2)*100
+        Next i
+        ''''''''''''''''''' Analog PT Sensors MPXHZ6130A y = 0.271x + 12.608
+
+        VoltSe (rAPT(),7,mV5000,10,1,0,50,1,0) ''mvolt
+
+        For i =1 To 7
+          CAPT(i)= rAPT(i)*apta+aptb ''' mv to mbar
+        Next i
+
+        For i=2 To 7
+          CAPT(i) = CAPT(i) - CAPT(1)
+        Next i
+        ''''''''''''''''''''''''' Data tables save'''''''''''''''''''''''''''''''''
+        CallTable DRF
+        CallTable DRF_RawData
+        PortSet (C6,0)              '' PT 5 Volt Turned Off
+        SW12 (SW12_1,0)             '' TDT 12V turned Off
+        SW12 (SW12_2,0)             '' DPT 12V turned Off
+        SWVX(VX1,0,1)               '' APT sensores 5V turned Off
+        SWVX(VX2,0,1)
+        SWVX(VX3,0,1)
+        SWVX(VX4,0,1)
+        Sensors_ON = False   ' Turn off all sensors
+
+      EndIf ' Close main Data save loop
+      '''''''''''''''''''' PT Set - For equalazing all the cell pressure sensors''''''''''
+
+      If PTSet Then
+
+        PortSet (C6,1 )''PT 5 volt on
+        Delay (1,200,mSec)
+        VoltSe (PT(),7,mV5000,1,1,0,50,1,0) ''mvolt
+        PortSet (C6,0 )''PT 5 volt of
+
+        For i =1 To 7
+          CPT(i)= PT(i)*pta+ptb ''' mv to mbar
+        Next i
+
+        For i =1 To 7
+          CPTdiff(i)= CPT(1) - CPT(i)
+        Next i
+        PTSet = False
+        
+      EndIf
+      ''''''''''''''''' Turn Sensors on (for testing)'''''''''''''''
+
+      If Sensors_ON Then
+        PortSet (C6,1)              '' PT 5V Turned ON
+        SW12 (SW12_1,1)             '' TDT 12V turned ON
+        SW12 (SW12_2,1)             '' DPT 12V turned ON
+        SWVX(VX1,1,1)               '' APT sensores 5V turned ON
+        SWVX(VX2,1,1)
+        SWVX(VX3,1,1)
+        SWVX(VX4,1,1)
+      Else
+        PortSet (C6,0)              '' PT 5V Turned Off
+        SW12 (SW12_1,0)             '' TDT 12V turned Off
+        SW12 (SW12_2,0)             '' DPT 12V turned Off
+        SWVX(VX1,1,0)               '' APT sensores 5V turned Off
+        SWVX(VX2,1,0)
+        SWVX(VX3,1,0)
+        SWVX(VX4,1,0)
+      EndIf
+    Else             '' Screen operation
+      PortSet (C6,1 )''PT 5 volt on for PT changes in real time on screen
+      counter = counter+1
+      RealTime(rTime())
+      PanelTemp (PTemp,15000)
+      Battery (Batt_volt)
+      '''''''''''''''''' ''Cell Pressure Sensors MPXHZ6400A y = 0.8261x + 0.0348
+      VoltSe (PT(),7,mV5000,1,1,0,50,1,0) ''mvolt
+
+      For i =1 To 7
+        CPT(i)= PT(i)*pta+ptb+CPTdiff(i) ''' mv to mbar
+      Next i
+      '''''''''''''''''''''''''''''''''''''''''''''''''
+      SplitStr (station_time,status.TimeStamp(3),".",1,5)
+
+      If pageState="H" Then  '' Display Home page
+
+        home_t0 =  "t0.txt="+ CHR(34) + station_time + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,home_t0,"",0,100)
+        home_t1 =  "t1.txt="+ CHR(34) + FormatFloat (Batt_volt,"%2.2f")+ " V" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,home_t1,"",0,100)
+        home_t2 =  "t2.txt="+ CHR(34) + FormatFloat (PTemp,"%2.2f")+ " C" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,home_t2,"",0,100)
+
+      ElseIf  pageState="W" Then  '' Display VWC page
+
+        water_t0 =  "t0.txt="+ CHR(34) + FormatFloat (CTDT(1),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t0,"",0,100)
+        water_t1 =  "t1.txt="+ CHR(34) + FormatFloat (CTDT(2),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t1,"",0,100)
+        water_t2 =  "t2.txt="+ CHR(34) + FormatFloat (CTDT(3),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t2,"",0,100)
+        water_t3 =  "t3.txt="+ CHR(34) + FormatFloat (CTDT(4),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t3,"",0,100)
+        water_t4 =  "t4.txt="+ CHR(34) + FormatFloat (CTDT(5),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t4,"",0,100)
+        water_t5 =  "t5.txt="+ CHR(34) + FormatFloat (CTDT(6),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t5,"",0,100)
+        water_t6 =  "t6.txt="+ CHR(34) + FormatFloat (CTDT(7),"%2.2f") + " %" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,water_t6,"",0,100)
+
+
+      ElseIf  pageState="C" Then    '' Display cell pressure page
+
+        level_t0 =  "t0.txt="+ CHR(34) + FormatFloat (DPTcm(1),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t0,"",0,100)
+        level_t1 =  "t1.txt="+ CHR(34) + FormatFloat (DPTcm(2),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t1,"",0,100)
+        level_t2 =  "t2.txt="+ CHR(34) + FormatFloat (DPTcm(3),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t2,"",0,100)
+        level_t3 =  "t3.txt="+ CHR(34) + FormatFloat (DPTcm(4),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t3,"",0,100)
+        level_t4 =  "t4.txt="+ CHR(34) + FormatFloat (DPTcm(5),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t4,"",0,100)
+        level_t5 =  "t5.txt="+ CHR(34) + FormatFloat (DPTcm(6),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t5,"",0,100)
+        level_t6 =  "t6.txt="+ CHR(34) + FormatFloat (DPTcm(7),"%2.2f") + " cm" + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,level_t6,"",0,100)
+
+        cell_t7 =  "t7.txt="+ CHR(34) + FormatFloat (CPT(1),"%2.0f")+  " mbar" + CHR(34) + CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t7,"",0,100)
+        cell_t8 =  "t8.txt="+ CHR(34) + FormatFloat (CPT(2),"%2.0f")+  " mbar" + CHR(34) + CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t8,"",0,100)
+        cell_t9 =  "t9.txt="+ CHR(34) + FormatFloat (CPT(3),"%2.0f")+ " mbar"  + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t9,"",0,100)
+        cell_t10 = "t10.txt="+ CHR(34) + FormatFloat (CPT(4),"%2.0f")+ " mbar"  + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t10,"",0,100)
+        cell_t11 = "t11.txt="+ CHR(34) + FormatFloat (CPT(5),"%2.0f")+ " mbar"  + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t11,"",0,100)
+        cell_t12 = "t12.txt="+ CHR(34) + FormatFloat (CPT(6),"%2.0f")+ " mbar"  + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t12,"",0,100)
+        cell_t13 = "t13.txt="+ CHR(34) + FormatFloat (CPT(7),"%2.0f")+ " mbar"  + CHR(34)+ CHR(&hFF)+ CHR(&hFF)+ CHR(&hFF)
+        SerialOut (ComC1,cell_t13,"",0,100)
+
+
+      EndIf
+      ''''''''''''''''''''''  Turn off Display after 3 minutes''''''''''
+
+      If counter >=  360 Then  '''''''360*0.5 sec = 3min
+        PushButton = False
+        PortSet (C5,0) '' Display 5V off
+        PortSet (C6,0 )''PT 5 volt off
+        counter = 0
+        pageState="H"
+      EndIf
+    EndIf 'closing the screen opertaion loop
+    '''''''''''''''''''''' FTP Sends''''''''''''''''''''''''''''''''''''''
+
+    If SendTest Then
+      PanelTemp (PTemp,15000)
+      Battery (Batt_volt)
+      CallTable FtpTest
+      FTPResultTest = FTPClient (Server,User,Pass,"FtpTest","DRFFtpTest.csv",9,0,0,0,-1008,4000)
+      SendTest = false
+    EndIf
+
+    If SendFiles Then
+      FTPResultRain = FTPClient (Server,User,Pass,"DRF_Rain","DRFRain.csv",9,0,0,Hr,-1008,4000)
+      FTPResultDRF_Raw = FTPClient (Server,User,Pass,"DRF_RawData","DRFRawData.csv",9,0,0,Hr,-1008,4000)     
+      FTPResultDRF = FTPClient (Server,User,Pass,"DRF","DRF.csv",9,0,0,Hr,-1008,4000)
+      SendFiles = false
+    EndIf
+
+    If IfTime(10,360,Min) Then
+      FTPResultRain = FTPClient (Server,User,Pass,"DRF_Rain","DRFRain.csv",9,0,0,Hr,-1008,4000)
+      FTPResultDRF_Raw = FTPClient (Server,User,Pass,"DRF_RawData","DRFRawData.csv",9,0,0,Hr,-1008,4000)
+      FTPResultDRF = FTPClient (Server,User,Pass,"DRF","DRF.csv",9,0,0,Hr,-1008,4000)         
+      CallTable FTPMonitor
+      FTPResultMonitor = FTPClient (Server,User,Pass,"FTPMonitor","DRFFTPMonitor.csv",9,0,0,Hr,-1008,4000)
+    EndIf
+  NextScan
+EndProg
+
