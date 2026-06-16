@@ -13,8 +13,8 @@ st.set_page_config(
 )
 
 # 2. RUTAS DE LOS ARCHIVOS EN SUPABASE STORAGE
-# !! REEMPLAZA 'TU_PROYECTO' por el ID real de tu Supabase (ej: abcdefghijklmno) !!
-URL_BASE = "https://TU_PROYECTO.supabase.co/storage/v1/object/public/sensoil-data"
+
+URL_BASE = "https://supabase.com/dashboard/project/jmnmzfybubcasaihmhqb"
 
 CONFIG_PROYECTOS = {
     "DRF": {
