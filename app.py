@@ -12,21 +12,44 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. CONFIGURACIÓN GEOGRÁFICA DE LAS ESTACIONES
+# Estilos CSS personalizados para mejorar el diseño comercial y los botones tipo "Pin"
+st.markdown("""
+    <style>
+    div.stButton > button {
+        background-color: #0F172A !important;
+        color: white !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+        border-radius: 20px !important;
+        padding: 6px 16px !important;
+        font-weight: bold !important;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #007BFF !important;
+        border-color: #FFFFFF !important;
+        transform: scale(1.02);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# 2. CONFIGURACIÓN GEOGRÁFICA Y DE SENSORES POR ESTACIÓN
+# Aquí se corrige la cantidad exacta de sensores para cada proyecto (7 vs 8)
 CONFIG_PROYECTOS = {
     "DRF": {
-        "csv_data": "Romeral.csv",  # Vinculado al archivo existente para asegurar estabilidad en la demo
+        "csv_data": "Romeral.csv",  # Vinculado para asegurar datos en la demo
         "csv_rain": "RomeralRain.csv",
         "imagen": "DRF.jpg", 
         "lat": -28.493772,  
-        "lon": -71.254531
+        "lon": -71.254531,
+        "max_senores": 7  # Configuración estricta para DRF
     },
     "ROMERAL": {
         "csv_data": "Romeral.csv", 
         "csv_rain": "RomeralRain.csv",
         "imagen": "Romeral.jpg", 
         "lat": -29.726153,  
-        "lon": -71.221878
+        "lon": -71.221878,
+        "max_senores": 8  # Configuración estricta para Romeral
     }
 }
 
@@ -69,13 +92,12 @@ def formatear_profundidad(col_name):
         pass
     return "N/A"
 
-# 3. BARRA LATERAL (PANEL DE CONTROL FIJO A LA IZQUIERDA)
+# 3. BARRA LATERAL (PANEL DE CONTROL UNIFICADO)
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
 st.sidebar.title("VMS GeoCloud Dashboard")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Panel de Control")
 
-# Captura dinámica de fechas disponibles para la simulación
 df_rom_aux, _, _ = cargar_datos_proyecto("ROMERAL")
 fechas_sim = sorted(df_rom_aux['TIMESTAMP'].dt.date.unique(), reverse=True) if df_rom_aux is not None else []
 
@@ -92,12 +114,12 @@ variable_grafico = st.sidebar.selectbox(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.info("🎯 **Flujo de la Demo:**\n1. Haga clic en el marcador azul del mapa.\n2. Se activará el visor de infraestructura del pozo abajo.\n3. Presione cualquier botón de sensor (`📍 1.6m`) a la derecha de la foto.\n4. Se abrirá la ventana flotante nativa con las curvas analíticas.")
+st.sidebar.info("🎯 **Nueva Experiencia Interactiva:**\n1. Haga clic en el marcador del mapa.\n2. Aparecerá la radiografía técnica del pozo justo abajo.\n3. Seleccione el Pin de profundidad deseado al lado o sobre el perfil.\n4. Se abrirá la ventana flotante con las métricas y gráficos en alta resolución.")
 
 
-# 4. VENTANA EMERGENTE MODAL (ST.DIALOG) PARA DATOS DEL SENSOR
-@st.dialog("📊 Desglose de Datos del Sensor", width="large")
-def mostrar_modal_sensor_detallado(id_proyecto, idx_seleccionado, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt):
+# 4. MODAL FLOTANTE (ST.DIALOG) PARA DETALLE ANALÍTICO DEL SENSOR SELECTO
+@st.dialog("📊 Ficha Técnica del Sensor", width="large")
+def mostrar_modal_sensor_fijo(id_proyecto, idx_seleccionado, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt):
     c_vwc = cols_vwc[idx_seleccionado] if idx_seleccionado < len(cols_vwc) else None
     c_temp = cols_temp[idx_seleccionado] if idx_seleccionado < len(cols_temp) else None
     c_pt = cols_pt[idx_seleccionado] if idx_seleccionado < len(cols_pt) else None
@@ -105,29 +127,29 @@ def mostrar_modal_sensor_detallado(id_proyecto, idx_seleccionado, df_data, ultim
 
     prof_legible = formatear_profundidad(c_vwc) if c_vwc else "N/A"
 
-    st.markdown(f"### 🔍 Canal Sensor S{idx_seleccionado+1} ({prof_legible}) | Estación {id_proyecto}")
-    st.caption(f"📅 Registro Auditado: {ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')}")
+    st.markdown(f"### 🔍 Sensor Canal S{idx_seleccionado+1} ({prof_legible}) — Estación {id_proyecto}")
+    st.caption(f"📅 Ventana Horaria del Registro: {ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')}")
     st.markdown("---")
 
-    # Fila de indicadores clave formateados correctamente
+    # Cuadrícula de KPI Comerciales
     m1, m2, m3, m4 = st.columns(4)
     with m1: 
-        v_vwc = ultimo_registro.get(c_vwc, 0.0) if c_vwc else 0.0
-        st.metric(label="Humedad Volumétrica (VWC)", value=f"{v_vwc:.2f} %")
+        val_vwc = ultimo_registro.get(c_vwc, 0.0) if c_vwc else 0.0
+        st.metric(label="Humedad Volumétrica (VWC)", value=f"{val_vwc:.2f} %")
     with m2: 
-        v_temp = ultimo_registro.get(c_temp, 0.0) if c_temp else 0.0
-        st.metric(label="Temperatura del Suelo", value=f"{v_temp:.1f} °C")
+        val_temp = ultimo_registro.get(c_temp, 0.0) if c_temp else 0.0
+        st.metric(label="Temperatura del Suelo", value=f"{val_temp:.1f} °C")
     with m3: 
-        v_pt = ultimo_registro.get(c_pt, 0.0) if c_pt else 0.0
-        st.metric(label="Presión de Poros (Celda)", value=f"{v_pt:.0f} mbar")
+        val_pt = ultimo_registro.get(c_pt, 0.0) if c_pt else 0.0
+        st.metric(label="Presión de Poros (Celda)", value=f"{val_pt:.0f} mbar")
     with m4: 
-        v_dpt = ultimo_registro.get(c_dpt, 0.0) if c_dpt else 0.0
-        st.metric(label="Nivel Hidrostático Fijo", value=f"{v_dpt:.1f} cm")
+        val_dpt = ultimo_registro.get(c_dpt, 0.0) if c_dpt else 0.0
+        st.metric(label="Nivel Hidrostático Fijo", value=f"{val_dpt:.1f} cm")
 
     st.markdown("---")
-    st.markdown(f"#### 📈 Análisis de Variación Temporal (Últimos 7 días) — {variable_grafico}")
+    st.markdown(f"#### 📈 Tendencia Histórica e Histograma (Últimos 7 días) — {variable_grafico}")
 
-    # Renderizado histórico del gráfico de líneas
+    # Filtrado y construcción de la gráfica temporal
     fecha_max_grafico = pd.Timestamp(fecha_sel)
     fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
     df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
@@ -146,10 +168,10 @@ def mostrar_modal_sensor_detallado(id_proyecto, idx_seleccionado, df_data, ultim
         df_grafico.set_index('Fecha', inplace=True)
         st.line_chart(df_grafico, use_container_width=True)
     else:
-        st.info("No se registran variaciones temporales en el rango seleccionado.")
+        st.info("No hay suficientes registros históricos para desplegar la tendencia lineal.")
 
 
-# 5. ASIGNACIÓN DE PESTAÑAS PRINCIPALES DE NAVEGACIÓN
+# 5. ESTRUCTURA VISUAL EN PESTAÑAS
 tab_drf, tab_romeral = st.tabs(["📍 Estación DRF Chile", "📍 Estación El Romeral"])
 
 def construir_interfaz_proyecto(id_proyecto):
@@ -160,21 +182,23 @@ def construir_interfaz_proyecto(id_proyecto):
         st.error(error)
         return
 
-    # Indexación de columnas de sensores
-    cols_vwc = sorted([c for c in df_data.columns if c.startswith('VWC_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
-    cols_temp = sorted([c for c in df_data.columns if c.startswith('TEMP_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
-    cols_pt = sorted([c for c in df_data.columns if c.startswith('PT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
-    cols_dpt = sorted([c for c in df_data.columns if c.startswith('DPT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
+    # Extracción y filtrado acotado por la cantidad de sensores definidos para la estación
+    num_sensores = cfg["max_senores"]
+    
+    cols_vwc = sorted([c for c in df_data.columns if c.startswith('VWC_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)[:num_sensores]
+    cols_temp = sorted([c for c in df_data.columns if c.startswith('TEMP_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)[:num_sensores]
+    cols_pt = sorted([c for c in df_data.columns if c.startswith('PT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)[:num_sensores]
+    cols_dpt = sorted([c for c in df_data.columns if c.startswith('DPT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)[:num_sensores]
     
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
     if df_dia.empty:
-        st.warning(f"No hay registros del pozo para la fecha seleccionada.")
+        st.warning(f"No se registran datos telemétricos para la fecha seleccionada.")
         return
     ultimo_registro = df_dia.iloc[-1]
 
-    st.subheader(f"🗺️ Ubicación Satelital — Monitoreo Faena {id_proyecto}")
+    st.subheader(f"🗺️ Geolocalización Satelital Continua — Faena {id_proyecto}")
     
-    # Renderizado de mapa satelital Folium
+    # Mapa base
     m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -185,50 +209,50 @@ def construir_interfaz_proyecto(id_proyecto):
 
     folium.Marker(
         [cfg["lat"], cfg["lon"]],
-        tooltip=f"Ver perfil de sensores e infraestructura para {id_proyecto}",
+        tooltip=f"Ver perfil de sensores e infraestructura de {id_proyecto}",
         icon=folium.Icon(color="blue", icon="info-sign")
     ).add_to(m)
 
-    mapa_output = st_folium(m, width="100%", height=450, key=f"mapa_full_{id_proyecto}")
+    mapa_output = st_folium(m, width="100%", height=400, key=f"mapa_full_{id_proyecto}")
 
-    # Control de estado persistente por sesión para desplegar el pozo
+    # Control de estado de la visualización del pozo
     if f"ver_perfil_{id_proyecto}" not in st.session_state:
         st.session_state[f"ver_perfil_{id_proyecto}"] = False
 
     if mapa_output and mapa_output.get("last_object_clicked"):
         st.session_state[f"ver_perfil_{id_proyecto}"] = True
 
-    # SECCIÓN INTEGRADA DE INFRAESTRUCTURA (IMAGEN + BOTONES DE ACCESO DIRECTO)
+    # SECCIÓN PREMIUM INTERACTIVA: RADIOGRAFÍA DE INFRAESTRUCTURA Y BOTONES TIPO PIN
     if st.session_state[f"ver_perfil_{id_proyecto}"]:
         st.markdown("---")
-        st.markdown(f"### 📸 Perfil Técnico Estratigráfico e Infraestructura Multi-Sensor: {id_proyecto}")
+        st.markdown(f"### 📸 Radiografía de Perfil Técnico e Infraestructura Multi-Sensor: {id_proyecto}")
+        st.caption("Presione sobre los pines de monitoreo dispuestos al costado derecho del pozo para abrir la ficha analítica de datos en tiempo real.")
         
-        c_foto, c_botones = st.columns([1.8, 1.2])
+        col_foto, col_pines = st.columns([1.6, 1.4])
         
-        with c_foto:
+        with col_foto:
             img_b64 = get_base64_image(cfg["imagen"])
             if img_b64:
                 st.markdown(f"""
-                <div style="background-color: #f8f9fa; border-radius: 8px; padding: 10px; box-shadow: 0px 4px 12px rgba(0,0,0,0.1); text-align: center;">
-                    <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; max-width: 440px; border-radius: 4px; display: inline-block;">
+                <div style="background-color: #f8f9fa; border-radius: 12px; padding: 15px; box-shadow: 0px 6px 16px rgba(0,0,0,0.1); text-align: center;">
+                    <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; max-width: 420px; border-radius: 8px; display: inline-block;">
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                st.error(f"⚠️ Imagen técnica {cfg['imagen']} no encontrada en el directorio raíz.")
+                st.error(f"⚠️ El archivo visual {cfg['imagen']} no está en la raíz.")
                 
-        with c_botones:
-            st.markdown("#### 🎯 Nivel del Sensor a Auditar")
-            st.caption("Seleccione la profundidad exacta instalada en el pozo para abrir la ficha técnica analítica:")
+        with col_pines:
+            st.markdown("<div style='padding-top: 10px;'></div>", unsafe_allow_html=True)
             
-            # Generador dinámico de botones nativos ordenados verticalmente por profundidad
+            # Generador dinámico y ordenado de accesos interactivos respetando la cantidad real de sensores (7 u 8)
             for idx, col_name in enumerate(cols_vwc):
                 prof_label = formatear_profundidad(col_name)
                 
-                if st.button(f"📍 Sensor S{idx+1} (Profundidad: {prof_label})", key=f"btn_s_{id_proyecto}_{idx}", use_container_width=True):
-                    # Llama al cuadro modal nativo con los datos del sensor seleccionado sin romper la app
-                    mostrar_modal_sensor_detallado(id_proyecto, idx, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt)
+                # Diseño premium de botón que simula el marcador estratigráfico del pozo
+                if st.button(f"📍 Sensor S{idx+1} — Nivel de Profundidad: {prof_label}", key=f"btn_s_{id_proyecto}_{idx}", use_container_width=True):
+                    mostrar_modal_sensor_fijo(id_proyecto, idx, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt)
 
-# 6. INYECCIÓN DE PROYECTOS EN LAS PESTAÑAS
+# 6. INYECCIÓN AUTOMÁTICA EN LAS PESTAÑAS DE NAVEGACIÓN
 with tab_drf:
     construir_interfaz_proyecto("DRF")
 
