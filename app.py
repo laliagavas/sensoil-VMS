@@ -5,7 +5,7 @@ from streamlit_folium import st_folium
 import base64
 import os
 
-# 1. CONFIGURACIÓN DE LA PLATAFORMA
+# 1. CONFIGURACIÓN DE LA PLATAFORMA DE PRESENTACIÓN
 st.set_page_config(
     page_title="VMS GeoCloud - SENSOIL Demo Comercial", 
     page_icon="🌍", 
@@ -59,7 +59,6 @@ def cargar_datos_proyecto(id_proyecto):
         return None, None, f"Error al abrir el archivo {cfg['csv_data']}: {e}"
 
 def formatear_profundidad(col_name):
-    """Transforma sufijos como 158cm a formato legible en metros (1.6m)"""
     try:
         parts = col_name.split('_')
         if len(parts) > 2:
@@ -70,13 +69,13 @@ def formatear_profundidad(col_name):
         pass
     return "N/A"
 
-# 3. BARRA LATERAL (BRANDING Y CONTROLES GLOBALES)
+# 3. BARRA LATERAL (PANEL DE CONTROL FIJO A LA IZQUIERDA)
 st.sidebar.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=140)
 st.sidebar.title("VMS GeoCloud Dashboard")
-
+st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Panel de Control")
 
-# Manejo de estados de selección de fecha compartidos
+# Obtener fechas referenciales
 df_drf_aux, _, _ = cargar_datos_proyecto("DRF")
 fechas_drf = sorted(df_drf_aux['TIMESTAMP'].dt.date.unique(), reverse=True) if df_drf_aux is not None else []
 
@@ -87,15 +86,95 @@ fecha_sel = st.sidebar.selectbox(
 )
 
 variable_grafico = st.sidebar.selectbox(
-    "Variable para Tendencia:", 
+    "Variable para Tendencia Histórica:", 
     ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"], 
     key="global_var_sel"
 )
 
 st.sidebar.markdown("---")
-st.sidebar.info("🎯 **Instrucciones de la Demo:**\n1. Haga clic en el marcador azul del mapa.\n2. Dentro de la foto emergente, haga clic en cualquier etiqueta de profundidad (ej: 1.6m).\n3. La información analítica detallada de ese sensor específico se desplegará mágicamente abajo del mapa.")
+st.sidebar.info("🎯 **Flujo de la Demo:**\n1. Haga clic en el marcador azul del mapa.\n2. Se abrirá la Radiografía en tamaño grande.\n3. Haga clic en cualquier punto de profundidad sobre la foto para abrir la ventana con el desglose analítico y gráfico temporal.")
 
-# 4. ESTRUCTURA DE PESTAÑAS PRINCIPALES
+# 4. DIALOGOS EMERGENTES (MODALES DE ALTA RESOLUCIÓN)
+
+@st.dialog("📊 Desglose de Datos del Sensor", width="large")
+def mostrar_modal_sensor(id_proyecto, sensor_idx, prof_label, registro, df_data, cols_sensor):
+    c_vwc, c_temp, c_pt, c_dpt = cols_sensor
+    
+    st.markdown(f"### 🔍 Sensor S{sensor_idx+1} ({prof_label}) — Faena {id_proyecto}")
+    st.write(f"**Fecha del Registro:** {registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Métricas en cajas analíticas limpias
+    m1, m2, m3, m4 = st.columns(4)
+    with m1: st.metric(label="Humedad Volumétrica (VWC)", value=f"{registro.get(c_vwc, 0.0):.2f} %")
+    with m2: st.metric(label="Temperatura Suelo", value=f"{registro.get(c_temp, 0.0):.1f} °C")
+    with m3: st.metric(label="Presión de Poros (Celda)", value=f"{registro.get(c_pt, 0.0):.0f} mbar")
+    with m4: st.metric(label="Nivel Hidrostático", value=f"{registro.get(c_dpt, 0.0):.1f} cm")
+    
+    st.markdown("---")
+    st.markdown(f"#### 📈 Histórico de Variación Temporal (Ventana de 7 días) — {variable_grafico}")
+    
+    # Gráfico histórico personalizado dentro de la ventana emergente
+    fecha_max_grafico = pd.Timestamp(fecha_sel)
+    fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
+    df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
+    
+    mapeo_variables = {
+        "Humedad (VWC %)": c_vwc,
+        "Temperatura (°C)": c_temp,
+        "Presión de Celda (mbar)": c_pt,
+        "Nivel (cm)": c_dpt
+    }
+    
+    columna_objetivo = mapeo_variables[variable_grafico]
+    df_grafico = df_filtrado[['TIMESTAMP', columna_objetivo]].copy()
+    df_grafico.columns = ['Fecha', f"Sensor S{sensor_idx+1} ({prof_label})"]
+    df_grafico.set_index('Fecha', inplace=True)
+    st.line_chart(df_grafico, use_container_width=True)
+
+@st.dialog("📸 Radiografía de Infraestructura Técnica", width="large")
+def abrir_modal_radiografia(id_proyecto, cols_vwc, cols_temp, cols_pt, cols_dpt, ultimo_registro, df_data):
+    cfg = CONFIG_PROYECTOS[id_proyecto]
+    num_sensores = len(cols_vwc)
+    
+    st.markdown(f"### Perfil Estratigráfico Vertical — {id_proyecto}")
+    st.caption("Haga clic directamente sobre los puntos de profundidad azules para abrir la ventana de auditoría analítica.")
+    
+    img_b64 = get_base64_image(cfg["imagen"])
+    
+    if img_b64:
+        # Construcción HTML interactiva con botones nativos de Streamlit simulados estéticamente
+        html_nodos = ""
+        for idx in range(num_sensores):
+            col_name = cols_vwc[idx]
+            prof_label = formatear_profundidad(col_name)
+            
+            # Distribución proporcional de los marcadores en vertical
+            top_val = 20 + (idx * (82 - 20) / (num_sensores - 1)) if num_sensores > 1 else 50
+            
+            # Código HTML para generar un punto marcado e interactivo
+            html_nodos += f"""
+            <div style="position: absolute; top: {top_val}%; left: 50%; transform: translate(-50%, -50%); z-index: 10;">
+                <a href="?action=audit_{id_proyecto}_{idx}" target="_top" style="text-decoration: none;">
+                    <div style="background-color: #007BFF; color: white; padding: 4px 9px; 
+                                border-radius: 20px; font-size: 11px; font-weight: bold; 
+                                border: 2px solid white; box-shadow: 0px 2px 6px rgba(0,0,0,0.4);
+                                cursor: pointer; white-space: nowrap; transition: 0.2s;">
+                        📍 {prof_label}
+                    </div>
+                </a>
+            </div>
+            """
+            
+        st.markdown(f"""
+        <div style="position: relative; width: 100%; max-width: 480px; margin: auto; background-color: #f8f9fa; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.05);">
+            <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; display: block; border-radius: 4px;">
+            {html_nodos}
+        </div>
+        """, unsafe_html=True)
+    else:
+        st.error(f"Falta el archivo visual {cfg['imagen']} en el directorio.")
+
+# 5. ESTRUCTURA DE PESTAÑAS EN PANTALLA PRINCIPAL
 tab_drf, tab_romeral = st.tabs(["📍 Estación DRF Chile", "📍 Estación El Romeral"])
 
 def construir_interfaz_proyecto(id_proyecto):
@@ -106,36 +185,19 @@ def construir_interfaz_proyecto(id_proyecto):
         st.error(error)
         return
 
-    # --- DETECCIÓN DINÁMICA DE CANALES ---
+    # Extracción de canales dinámicos
     cols_vwc = sorted([c for c in df_data.columns if c.startswith('VWC_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_temp = sorted([c for c in df_data.columns if c.startswith('TEMP_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_pt = sorted([c for c in df_data.columns if c.startswith('PT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     cols_dpt = sorted([c for c in df_data.columns if c.startswith('DPT_')], key=lambda x: int(x.split('_')[1]) if x.split('_')[1].isdigit() else 0)
     
-    num_sensores = len(cols_vwc)
-    if num_sensores == 0:
-        st.warning("No se detectaron sensores en el archivo.")
-        return
-
-    # Distribución de coordenadas sobre la imagen técnica
-    coordenadas_nodos = {}
-    for idx in range(num_sensores):
-        sensor_num = idx + 1
-        top_val = 22 + (idx * (82 - 22) / (num_sensores - 1)) if num_sensores > 1 else 50
-        coordenadas_nodos[sensor_num] = {"top": f"{top_val:.1f}%", "left": "51%"}
-
-    # Filtrado por fecha seleccionada en el Panel de Control lateral
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
     if df_dia.empty:
-        st.warning(f"No hay registros para la fecha {fecha_sel} en la estación {id_proyecto}.")
+        st.warning(f"Sin registros para la fecha elegida.")
         return
-        
     ultimo_registro = df_dia.iloc[-1]
-    ultima_fecha = ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M:%S')
 
-    # --- MAPA SATELITAL (ANCHO COMPLETO PARA LIMPIEZA VISUAL) ---
-    st.subheader(f"🗺️ Ubicación Satelital e Infraestructura de Monitoreo")
-    
+    # MAPA SATELITAL LIMPIO A PANTALLA COMPLETA
     m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -144,115 +206,42 @@ def construir_interfaz_proyecto(id_proyecto):
         control=False
     ).add_to(m)
 
-    # --- CONSTRUCCIÓN DEL HTML DE LA RADIOGRAFÍA INTERACTIVA (CON LINKS DE CAPTURA) ---
-    img_b64 = get_base64_image(cfg["imagen"])
-    popup_html = f"""
-    <div style="font-family: 'Arial', sans-serif; width: 320px; text-align: center;">
-        <h4 style="color: #0F172A; margin: 0 0 4px 0; border-bottom: 2px solid #3B82F6; padding-bottom: 4px; font-size: 13px;">
-            📸 Perfil Técnico: {id_proyecto}
-        </h4>
-        <p style="font-size: 10px; color: #64748B; margin: 0 0 8px 0;">Pinche una profundidad para auditar datos:</p>
-    """
-    
-    if img_b64:
-        popup_html += f"""
-        <div style="position: relative; width: 100%; max-width: 260px; margin: auto;">
-            <img src="data:image/jpeg;base64,{img_b64}" style="width: 100%; border-radius: 4px; display: block;">
-        """
-        for idx in range(num_sensores):
-            sensor_num = idx + 1
-            col_name = cols_vwc[idx]
-            prof_label = formatear_profundidad(col_name)
-            coord = coordenadas_nodos[sensor_num]
-            
-            # Link especial que recarga la app inyectando el sensor seleccionado en la URL
-            link_target = f"?sensor={id_proyecto}_{sensor_num}"
-            
-            popup_html += f"""
-            <a href="{link_target}" target="_top" style="text-decoration: none;">
-                <div style="position: absolute; top: {coord['top']}; left: {coord['left']}; 
-                            background-color: #3B82F6; color: #FFFFFF; 
-                            padding: 2px 5px; border-radius: 3px; font-size: 10px; 
-                            font-weight: bold; border: 1px solid #FFFFFF; 
-                            transform: translate(-50%, -50%); white-space: nowrap; 
-                            box-shadow: 1px 1px 4px rgba(0,0,0,0.4); cursor: pointer;">
-                    📍 {prof_label}
-                </div>
-            </a>
-            """
-        popup_html += "</div>"
-    else:
-        popup_html += f'<p style="color:red; font-size:11px;">⚠️ Archivo {cfg["imagen"]} ausente.</p>'
-    popup_html += "</div>"
-
-    iframe = folium.IFrame(popup_html, width=340, height=440)
+    # Marcador interactivo limpio
     folium.Marker(
         [cfg["lat"], cfg["lon"]],
-        popup=folium.Popup(iframe, max_width=360),
-        tooltip=f"Haga clic para ver la Radiografía del Pozo {id_proyecto}",
-        icon=folium.Icon(color="blue", icon="info-sign")
+        tooltip=f"Ver Radiografía Completa del Pozo {id_proyecto}",
+        icon=folium.Icon(color="blue", icon="fullscreen")
     ).add_to(m)
 
-    st_folium(m, width="100%", height=380, key=f"mapa_{id_proyecto}")
+    # Renderizado y escucha de clics en el mapa
+    mapa_output = st_folium(m, width="100%", height=550, key=f"mapa_full_{id_proyecto}")
 
-    # --- LÓGICA DE CAPTURA DEL SENSOR SELECCIONADO POR CLIC ---
-    parametros = st.query_params
-    sensor_seleccionado = parametros.get("sensor", None)
+    # Lógica de Apertura de Ventana de Imagen al pinchar el Marcador del Mapa
+    if mapa_output and mapa_output.get("last_object_clicked"):
+        # Reseteamos el estado de clic del mapa para permitir re-aperturas
+        st.session_state[f"modal_radiografia_{id_proyecto}"] = True
+        abrir_modal_radiografia(id_proyecto, cols_vwc, cols_temp, cols_pt, cols_dpt, ultimo_registro, df_data)
+
+    # LÓGICA DE CAPTURA DE SELECCIÓN DE SENSOR POR PUNTO PINCHADO
+    query_params = st.query_params
+    action = query_params.get("action", None)
     
-    st.markdown("---")
-    
-    # Verificamos si el clic pertenece a la pestaña de la faena que estamos renderizando
-    if sensor_seleccionado and sensor_seleccionado.startswith(f"{id_proyecto}_"):
+    if action and action.startswith(f"audit_{id_proyecto}_"):
         try:
-            idx_seleccionado = int(sensor_seleccionado.split("_")[1]) - 1
+            sensor_idx = int(action.split("_")[2])
+            # Limpiamos el parámetro de la URL inmediatamente para evitar bucles de renderizado
+            st.query_params.clear()
+            
+            # Ejecutamos el modal de auditoría específico del sensor pinchado
+            c_vwc = cols_vwc[sensor_idx]
+            prof_label = formatear_profundidad(c_vwc)
+            cols_sensor = (cols_vwc[sensor_idx], cols_temp[sensor_idx], cols_pt[sensor_idx], cols_dpt[sensor_idx])
+            
+            mostrar_modal_sensor(id_proyecto, sensor_idx, prof_label, ultimo_registro, df_data, cols_sensor)
         except:
-            idx_seleccionado = 0
-            
-        if idx_seleccionado >= num_sensores:
-            idx_seleccionado = 0
-            
-        # Extraemos los datos del sensor elegido
-        c_vwc = cols_vwc[idx_seleccionado]
-        c_temp = cols_temp[idx_seleccionado]
-        c_pt = cols_pt[idx_seleccionado]
-        c_dpt = cols_dpt[idx_seleccionado]
-        
-        prof_legible = formatear_profundidad(c_vwc)
-        
-        # --- DESPLIEGUE EXCLUSIVO DEL SENSOR AUDITADO ---
-        st.subheader(f"🔍 Auditoría en Profundidad: Sensor S{idx_seleccionado+1} ({prof_legible}) | {id_proyecto}")
-        
-        # Fila 1: Métricas específicas del punto seleccionado
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: st.metric(label=f"Humedad Volumétrica (VWC)", value=f"{ultimo_registro.get(c_vwc, 0.0):.2f} %")
-        with m2: st.metric(label="Temperatura del Suelo", value=f"{ultimo_registro.get(c_temp, 0.0):.1f} °C")
-        with m3: st.metric(label="Presión de Poros (Celda)", value=f"{ultimo_registro.get(c_pt, 0.0):.0f} mbar")
-        with m4: st.metric(label="Nivel Hidrostático Fijo", value=f"{ultimo_registro.get(c_dpt, 0.0):.1f} cm")
-        
-        # Fila 2: Gráfico de Tendencia Histórica del Sensor
-        st.markdown(f"**📈 Análisis de Comportamiento Temporal Histórico (Ventana de 7 días)**")
-        fecha_max_grafico = pd.Timestamp(fecha_sel)
-        fecha_min_grafico = fecha_max_grafico - pd.Timedelta(days=7)
-        df_filtrado = df_data[(df_data['TIMESTAMP'] >= fecha_min_grafico) & (df_data['TIMESTAMP'] <= fecha_max_grafico + pd.Timedelta(days=1))]
-        
-        mapeo_variables = {
-            "Humedad (VWC %)": c_vwc,
-            "Temperatura (°C)": c_temp,
-            "Presión de Celda (mbar)": c_pt,
-            "Nivel (cm)": c_dpt
-        }
-        
-        columna_objetivo = mapeo_variables[variable_grafico]
-        df_grafico = df_filtrado[['TIMESTAMP', columna_objetivo]].copy()
-        df_grafico.columns = ['Fecha', f"Sensor S{idx_seleccionado+1} ({prof_legible}) - {variable_grafico}"]
-        df_grafico.set_index('Fecha', inplace=True)
-        st.line_chart(df_grafico, use_container_width=True)
-        
-    else:
-        # Estado inicial o de reposo instructivo
-        st.info(f"💡 **Modo de Espera Activo:** Por favor, expanda el mapa de arriba, haga clic en el marcador azul y seleccione una de las profundidades físicas disponibles (ej: {formatear_profundidad(cols_vwc[0])}) para auditar el comportamiento hidrológico detallado de ese nivel.")
+            pass
 
-# 5. ASIGNACIÓN DE CONTENIDO A LAS PESTAÑAS
+# 6. ASIGNACIÓN A CADA PESTAÑA
 with tab_drf:
     construir_interfaz_proyecto("DRF")
 
