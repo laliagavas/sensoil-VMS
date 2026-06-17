@@ -126,7 +126,7 @@ def get_cols(df, prefix, n):
     return cols[:n]
 
 # ─────────────────────────────────────────────
-# 4. COMPONENTE INTERACTIVO HTML REPARADO
+# 4. COMPONENTE INTERACTIVO HTML REPARADO (INMEDIATO)
 # ─────────────────────────────────────────────
 def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, cols_vwc: list, ultimo_registro):
     pins_js = []
@@ -175,7 +175,6 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
     </div>
 
     <script>
-        // Función fallback para enviar datos a Streamlit
         function sendToStreamlit(index) {{
             parent.postMessage({{
                 isstreamlitMessage: true,
@@ -188,6 +187,9 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
             const wrapper = document.getElementById('wrapper');
             const PINS = {pins_json};
             
+            // Si ya existen pines creados para evitar duplicados
+            if(document.querySelector('.pin')) return;
+
             PINS.forEach((p) => {{
                 const btn = document.createElement('button');
                 btn.className = 'pin';
@@ -204,7 +206,6 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
                     </div>
                 `;
                 
-                // Al hacer click, envía el índice del sensor de forma inmediata
                 btn.addEventListener('click', (e) => {{
                     e.preventDefault();
                     sendToStreamlit(p.idx);
@@ -212,18 +213,25 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
                 wrapper.appendChild(btn);
             }});
             
-            // Avisar al padre el tamaño exacto para que no corte la imagen abajo
-            const actualHeight = document.getElementById('wrapper').offsetHeight;
-            parent.postMessage({{
-                isstreamlitMessage: true,
-                type: "streamlit:setFrameHeight",
-                height: actualHeight + 20
-            }}, "*");
+            // Ajustar altura dinámicamente si es posible
+            setTimeout(() => {{
+                const actualHeight = document.getElementById('wrapper').offsetHeight;
+                if(actualHeight > 100) {{
+                    parent.postMessage({{
+                        isstreamlitMessage: true,
+                        type: "streamlit:setFrameHeight",
+                        height: actualHeight + 30
+                    }}, "*");
+                }}
+            }}, 150);
         }}
 
+        // Ejecutar inmediatamente sin esperar eventos que puedan fallar por caché
         const img = document.getElementById('pozo-img');
-        if (img.complete) {{ buildPins(); }}
-        else {{ img.addEventListener('load', buildPins); }}
+        buildPins();
+        if (!img.complete) {{
+            img.addEventListener('load', buildPins);
+        }}
     </script>
     </body>
     </html>
@@ -252,7 +260,6 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
     </div>
     """, unsafe_allow_html=True)
 
-    # Despliegue de TODOS los datos analíticos del sensor
     m1, m2, m3, m4 = st.columns(4)
     with m1: st.metric("💧 Humedad VWC", f"{ultimo_registro.get(c_vwc, 0.0):.2f} %" if c_vwc else "N/D")
     with m2: st.metric("🌡️ Temperatura", f"{ultimo_registro.get(c_temp, 0.0):.1f} °C" if c_temp else "N/D")
@@ -262,7 +269,6 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
     st.markdown("---")
     st.markdown(f"#### 📈 Historial de Tendencia — {variable_grafico} (Últimos 7 días)")
 
-    # Filtrado dinámico de los últimos 7 días
     fecha_max = pd.Timestamp(fecha_sel)
     fecha_min = fecha_max - pd.Timedelta(days=7)
     df_f = df_data[(df_data['TIMESTAMP'] >= fecha_min) & (df_data['TIMESTAMP'] <= fecha_max + pd.Timedelta(days=1))]
@@ -278,12 +284,12 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
 
     if st.button("✖ Volver a la Radiografía", key=f"close_sens_{id_proyecto}_{idx}", use_container_width=True):
         st.session_state[f"sensor_modal_{id_proyecto}"] = None
-        st.session_state[f"abrir_radio_{id_proyecto}"] = True  # Regresa al mapa/radiografía
+        st.session_state[f"abrir_radio_{id_proyecto}"] = True
         st.rerun()
 
 
 # ─────────────────────────────────────────────
-# 6. MODAL DE RADIOGRAFÍA (AJUSTADO EN ALTURA)
+# 6. MODAL DE RADIOGRAFÍA (CON FORZADO DE ALTURA SEGURO)
 # ─────────────────────────────────────────────
 @st.dialog("🏗️ Radiografía Estructural del Pozo", width="large")
 def modal_radiografia(id_proyecto: str, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico: str):
@@ -292,7 +298,7 @@ def modal_radiografia(id_proyecto: str, df_data, ultimo_registro, cols_vwc, cols
 
     st.markdown(f"""
     <p style="color:#8b949e;font-size:0.85rem;margin-bottom:12px;">
-        📍 Estación: <b style="color:#58a6ff">{id_proyecto}</b> &nbsp;·&nbsp; {cfg['max_sensores']} Sensores Activos &nbsp;·&nbsp; <b>Haz clic en cualquier Pin directamente sobre la imagen</b> para desplegar gráficos e información analítica completa.
+        📍 Estación: <b style="color:#58a6ff">{id_proyecto}</b> &nbsp;·&nbsp; {cfg['max_sensores']} Sensores Activos &nbsp;·&nbsp; Haz clic en cualquier <b>Pin azul</b> de la imagen para ver todo el desglose analítico.
     </p>
     """, unsafe_allow_html=True)
 
@@ -301,10 +307,9 @@ def modal_radiografia(id_proyecto: str, df_data, ultimo_registro, cols_vwc, cols
     else:
         html_code = render_imagen_con_pines(id_proyecto, img_b64, cfg["pin_coords"], cols_vwc, ultimo_registro)
         
-        # Ampliamos a height=850 para asegurar que las imágenes largas quepan de forma impecable sin cortarse
-        click_index = st.components.v1.html(html_code, height=850, scrolling=False)
+        # Se le asigna una altura base alta garantizada de 900px por si falla el resize automático del iframe
+        click_index = st.components.v1.html(html_code, height=900, scrolling=True)
         
-        # Si hacen click en un pin, capturamos el índice, cerramos este modal y abrimos el de análisis completo
         if click_index is not None and click_index != "":
             st.session_state[f"sensor_modal_{id_proyecto}"] = int(click_index)
             st.session_state[f"abrir_radio_{id_proyecto}"] = False
@@ -363,19 +368,16 @@ def construir_interfaz_proyecto(id_proyecto: str):
     st.markdown(f"### 🗺️ Monitoreo Satelital — <span style='color:#58a6ff'>{id_proyecto}</span>", unsafe_allow_html=True)
     st.caption("Haz clic en el marcador azul del mapa para inspeccionar la radiografía interactiva del pozo.")
 
-    # Generación de Mapa
     m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satelital', control=False).add_to(m)
     folium.Marker([cfg["lat"], cfg["lon"]], tooltip=f"Ver Radiografía {id_proyecto}", icon=folium.Icon(color="blue", icon="info-sign")).add_to(m)
 
     mapa_output = st_folium(m, width="100%", height=380, key=f"mapa_{id_proyecto}")
 
-    # Gatillo del mapa para abrir radiografía
     if mapa_output and mapa_output.get("last_object_clicked"):
         st.session_state[f"abrir_radio_{id_proyecto}"] = True
         st.rerun()
 
-    # CONTROL DE DESPLIEGUE SEGURO DE MODALES CON STATE-MACHINE
     if st.session_state.get(f"abrir_radio_{id_proyecto}"):
         modal_radiografia(id_proyecto, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico)
 
@@ -383,7 +385,6 @@ def construir_interfaz_proyecto(id_proyecto: str):
     if sensor_idx is not None:
         modal_sensor(id_proyecto, sensor_idx, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico)
 
-    # Resumen de Telemetría Inferior
     st.markdown("##### 📊 Cuadro de Estado de Sensores")
     data_resumen = []
     for i in range(num_sens):
