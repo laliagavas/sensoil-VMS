@@ -86,7 +86,7 @@ CONFIG_PROYECTOS = {
 }
 
 # ─────────────────────────────────────────────
-# 3. UTILIDADES
+# 3. UTILIDADES DE DATOS
 # ─────────────────────────────────────────────
 def get_base64_image(image_path: str) -> str:
     if os.path.exists(image_path):
@@ -126,7 +126,7 @@ def get_cols(df, prefix, n):
     return cols[:n]
 
 # ─────────────────────────────────────────────
-# 4. COMPONENTE HTML BIDIRECCIONAL REFINADO
+# 4. COMPONENTE INTERACTIVO HTML REPARADO
 # ─────────────────────────────────────────────
 def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, cols_vwc: list, ultimo_registro):
     pins_js = []
@@ -144,7 +144,6 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
 
     pins_json = json.dumps(pins_js)
     
-    # Inyección directa del script de comunicación nativa de Streamlit
     html_component = f"""
     <!DOCTYPE html>
     <html>
@@ -154,14 +153,17 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
         body {{ background: transparent; font-family: 'Segoe UI', sans-serif; overflow: hidden; }}
         .wrapper {{ position: relative; display: inline-block; width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }}
         .pozo-img {{ width: 100%; display: block; border-radius: 12px; }}
-        .pin {{ position: absolute; transform: translate(-50%, -100%); cursor: pointer; border: none; background: transparent; padding: 0; z-index: 10; opacity: 1; }}
-        .pin-inner {{ display: flex; flex-direction: column; align-items: center; gap: 0; }}
-        .pin-bubble {{ background: linear-gradient(135deg, #1f6feb, #388bfd); color: white; border-radius: 8px 8px 8px 0; padding: 4px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 12px rgba(31,111,235,0.6); transition: all 0.2s ease; line-height: 1.3; text-align: center; }}
-        .pin-stem {{ width: 2px; height: 10px; background: #388bfd; }}
-        .pin-dot {{ width: 8px; height: 8px; background: #58a6ff; border-radius: 50%; box-shadow: 0 0 8px rgba(88,166,255,0.8); }}
-        .pin:hover .pin-bubble {{ background: linear-gradient(135deg, #388bfd, #79c0ff); transform: scale(1.05); }}
         
-        .pin-tooltip {{ position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #e6edf3; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 20; }}
+        .pin {{ position: absolute; transform: translate(-50%, -100%); cursor: pointer; border: none; background: transparent; padding: 0; z-index: 10; }}
+        .pin-inner {{ display: flex; flex-direction: column; align-items: center; gap: 0; }}
+        .pin-bubble {{ background: linear-gradient(135deg, #1f6feb, #388bfd); color: white; border-radius: 8px 8px 8px 0; padding: 5px 9px; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 4px 14px rgba(31,111,235,0.6); transition: all 0.2s ease; line-height: 1.3; text-align: center; }}
+        .pin-stem {{ width: 2px; height: 12px; background: #388bfd; }}
+        .pin-dot {{ width: 8px; height: 8px; background: #58a6ff; border-radius: 50%; box-shadow: 0 0 8px rgba(88,166,255,0.8); }}
+        .pin:hover .pin-bubble {{ background: linear-gradient(135deg, #2ea043, #3fb950); transform: scale(1.1); box-shadow: 0 4px 14px rgba(46,160,67,0.6); }}
+        .pin:hover .pin-stem {{ background: #3fb950; }}
+        .pin:hover .pin-dot {{ background: #58a6ff; }}
+        
+        .pin-tooltip {{ position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #e6edf3; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 20; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }}
         .pin:hover .pin-tooltip {{ opacity: 1; }}
         .pin-tooltip span {{ color: #58a6ff; font-weight: 700; }}
     </style>
@@ -172,48 +174,56 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
         <img class="pozo-img" src="data:image/jpeg;base64,{img_b64}" id="pozo-img" />
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/dist/streamlit-component-lib.js"></script>
     <script>
-    const PINS = {pins_json};
+        // Función fallback para enviar datos a Streamlit
+        function sendToStreamlit(index) {{
+            parent.postMessage({{
+                isstreamlitMessage: true,
+                type: "streamlit:setComponentValue",
+                value: index
+            }}, "*");
+        }}
 
-    function sendMessageToStreamlit(sensorIdx) {{
-        // Envía de forma segura el índice del sensor a Python usando la API oficial
-        Streamlit.setComponentValue(sensorIdx);
-    }}
-
-    function buildPins() {{
-        const wrapper = document.getElementById('wrapper');
-        PINS.forEach((p) => {{
-            const btn = document.createElement('button');
-            btn.className = 'pin';
-            btn.id = 'pin-' + p.idx;
-            btn.style.cssText = `left:${{p.left}}%; top:${{p.top}}%;`;
-            btn.innerHTML = `
-                <div class="pin-inner">
-                    <div class="pin-tooltip">
-                        <span>${{p.label}}</span> · ${{p.prof}} · VWC: <span>${{p.vwc}}</span>
+        function buildPins() {{
+            const wrapper = document.getElementById('wrapper');
+            const PINS = {pins_json};
+            
+            PINS.forEach((p) => {{
+                const btn = document.createElement('button');
+                btn.className = 'pin';
+                btn.id = 'pin-' + p.idx;
+                btn.style.cssText = `left:${{p.left}}%; top:${{p.top}}%;`;
+                btn.innerHTML = `
+                    <div class="pin-inner">
+                        <div class="pin-tooltip">
+                            <span>${{p.label}}</span> · Prof: ${{p.prof}} · VWC: <span>${{p.vwc}}</span>
+                        </div>
+                        <div class="pin-bubble">${{p.label}}<br/><small style="font-weight:400;font-size:9px">${{p.prof}}</small></div>
+                        <div class="pin-stem"></div>
+                        <div class="pin-dot"></div>
                     </div>
-                    <div class="pin-bubble">${{p.label}}<br/><small style="font-weight:400;font-size:9px">${{p.prof}}</small></div>
-                    <div class="pin-stem"></div>
-                    <div class="pin-dot"></div>
-                </div>
-            `;
-            btn.addEventListener('click', (e) => {{
-                e.preventDefault();
-                sendMessageToStreamlit(p.idx);
+                `;
+                
+                // Al hacer click, envía el índice del sensor de forma inmediata
+                btn.addEventListener('click', (e) => {{
+                    e.preventDefault();
+                    sendToStreamlit(p.idx);
+                }});
+                wrapper.appendChild(btn);
             }});
-            wrapper.appendChild(btn);
-        }});
-        
-        // Ajusta la altura del iframe en Streamlit de forma dinámica
-        setTimeout(() => {{
-            Streamlit.setFrameHeight(document.getElementById('wrapper').offsetHeight);
-        }}, 150);
-    }}
+            
+            // Avisar al padre el tamaño exacto para que no corte la imagen abajo
+            const actualHeight = document.getElementById('wrapper').offsetHeight;
+            parent.postMessage({{
+                isstreamlitMessage: true,
+                type: "streamlit:setFrameHeight",
+                height: actualHeight + 20
+            }}, "*");
+        }}
 
-    const img = document.getElementById('pozo-img');
-    if (img.complete) {{ buildPins(); }}
-    else {{ img.addEventListener('load', buildPins); }}
+        const img = document.getElementById('pozo-img');
+        if (img.complete) {{ buildPins(); }}
+        else {{ img.addEventListener('load', buildPins); }}
     </script>
     </body>
     </html>
@@ -222,9 +232,9 @@ def render_imagen_con_pines(id_proyecto: str, img_b64: str, pin_coords: list, co
 
 
 # ─────────────────────────────────────────────
-# 5. MODAL DE SENSOR (Métricas e Histórico)
+# 5. MODAL DE SENSOR (MÉTRICAS COMPLETAS Y GRÁFICO HISTÓRICO)
 # ─────────────────────────────────────────────
-@st.dialog("📊 Análisis de Sensor", width="large")
+@st.dialog("📊 Análisis de Sensor Completo", width="large")
 def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico: str):
     c_vwc  = cols_vwc[idx]  if idx < len(cols_vwc)  else None
     c_temp = cols_temp[idx] if idx < len(cols_temp) else None
@@ -237,11 +247,12 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
         <h3 style="margin:0;color:#58a6ff;">📡 Sensor S{idx+1} — Profundidad {prof}</h3>
         <p style="margin:0;color:#8b949e;font-size:0.85rem;">
             Estación: <b style="color:#e6edf3">{id_proyecto}</b> &nbsp;|&nbsp;
-            Registro: <b style="color:#e6edf3">{ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')}</b>
+            Última Lectura: <b style="color:#e6edf3">{ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')}</b>
         </p>
     </div>
     """, unsafe_allow_html=True)
 
+    # Despliegue de TODOS los datos analíticos del sensor
     m1, m2, m3, m4 = st.columns(4)
     with m1: st.metric("💧 Humedad VWC", f"{ultimo_registro.get(c_vwc, 0.0):.2f} %" if c_vwc else "N/D")
     with m2: st.metric("🌡️ Temperatura", f"{ultimo_registro.get(c_temp, 0.0):.1f} °C" if c_temp else "N/D")
@@ -249,8 +260,9 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
     with m4: st.metric("📏 Nivel Hidrostático", f"{ultimo_registro.get(c_dpt, 0.0):.1f} cm" if c_dpt else "N/D")
 
     st.markdown("---")
-    st.markdown(f"#### 📈 Tendencia — {variable_grafico} (últimos 7 días)")
+    st.markdown(f"#### 📈 Historial de Tendencia — {variable_grafico} (Últimos 7 días)")
 
+    # Filtrado dinámico de los últimos 7 días
     fecha_max = pd.Timestamp(fecha_sel)
     fecha_min = fecha_max - pd.Timedelta(days=7)
     df_f = df_data[(df_data['TIMESTAMP'] >= fecha_min) & (df_data['TIMESTAMP'] <= fecha_max + pd.Timedelta(days=1))]
@@ -260,55 +272,58 @@ def modal_sensor(id_proyecto: str, idx: int, df_data, ultimo_registro, cols_vwc,
     
     if col_obj and col_obj in df_f.columns:
         df_g = df_f[['TIMESTAMP', col_obj]].copy()
-        df_g.columns = ['Fecha', f"S{idx+1} ({prof})"]
+        df_g.columns = ['Fecha', f"Sensor S{idx+1} ({prof})"]
         df_g.set_index('Fecha', inplace=True)
         st.line_chart(df_g, use_container_width=True)
 
-    if st.button("✖ Volver a Radiografía", key=f"close_sens_{id_proyecto}_{idx}"):
+    if st.button("✖ Volver a la Radiografía", key=f"close_sens_{id_proyecto}_{idx}", use_container_width=True):
         st.session_state[f"sensor_modal_{id_proyecto}"] = None
+        st.session_state[f"abrir_radio_{id_proyecto}"] = True  # Regresa al mapa/radiografía
         st.rerun()
 
 
 # ─────────────────────────────────────────────
-# 6. MODAL DE RADIOGRAFÍA (Conexión Bidireccional Segura)
+# 6. MODAL DE RADIOGRAFÍA (AJUSTADO EN ALTURA)
 # ─────────────────────────────────────────────
-@st.dialog("🏗️ Radiografía del Pozo", width="large")
+@st.dialog("🏗️ Radiografía Estructural del Pozo", width="large")
 def modal_radiografia(id_proyecto: str, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico: str):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     img_b64 = get_base64_image(cfg["imagen"])
 
     st.markdown(f"""
-    <p style="color:#8b949e;font-size:0.85rem;margin-bottom:8px;">
-        📍 Estación <b style="color:#58a6ff">{id_proyecto}</b> &nbsp;·&nbsp; {cfg['max_sensores']} sensores activos &nbsp;·&nbsp; Haz clic sobre los pines de la imagen.
+    <p style="color:#8b949e;font-size:0.85rem;margin-bottom:12px;">
+        📍 Estación: <b style="color:#58a6ff">{id_proyecto}</b> &nbsp;·&nbsp; {cfg['max_sensores']} Sensores Activos &nbsp;·&nbsp; <b>Haz clic en cualquier Pin directamente sobre la imagen</b> para desplegar gráficos e información analítica completa.
     </p>
     """, unsafe_allow_html=True)
 
     if not img_b64:
-        st.error(f"⚠️ Imagen no encontrada: {cfg['imagen']}")
+        st.error(f"⚠️ Imagen {cfg['imagen']} no encontrada en el directorio raíz.")
     else:
         html_code = render_imagen_con_pines(id_proyecto, img_b64, cfg["pin_coords"], cols_vwc, ultimo_registro)
         
-        # Almacenamos el índice que retorna el iframe al ser clickeado de forma nativa
-        click_index = st.components.v1.html(html_code, height=580, scrolling=False)
+        # Ampliamos a height=850 para asegurar que las imágenes largas quepan de forma impecable sin cortarse
+        click_index = st.components.v1.html(html_code, height=850, scrolling=False)
         
-        # CAPTURA DINÁMICA: Si el usuario presionó un pin, mutamos el estado e invocamos rerun
-        if click_index is not None:
+        # Si hacen click en un pin, capturamos el índice, cerramos este modal y abrimos el de análisis completo
+        if click_index is not None and click_index != "":
             st.session_state[f"sensor_modal_{id_proyecto}"] = int(click_index)
+            st.session_state[f"abrir_radio_{id_proyecto}"] = False
             st.rerun()
 
     st.markdown("---")
-    st.markdown("##### 🎯 Acceso Rápido por Botones:")
+    st.markdown("##### 🎯 Acceso rápido alternativo por botones:")
     cols_btns = st.columns(cfg["max_sensores"])
     for i, col in enumerate(cols_btns):
         with col:
             prof = formatear_profundidad(cols_vwc[i]) if i < len(cols_vwc) else ""
             if st.button(f"S{i+1}\n{prof}", key=f"quick_{id_proyecto}_{i}", use_container_width=True):
                 st.session_state[f"sensor_modal_{id_proyecto}"] = i
+                st.session_state[f"abrir_radio_{id_proyecto}"] = False
                 st.rerun()
 
 
 # ─────────────────────────────────────────────
-# 7. SIDEBAR (Filtros de control)
+# 7. SIDEBAR (Filtros Globales)
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.image("https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png", width=130)
@@ -323,7 +338,7 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────
-# 8. INTERFAZ PRINCIPAL Y MAPAS
+# 8. PANEL PRINCIPAL POR PROYECTO
 # ─────────────────────────────────────────────
 def construir_interfaz_proyecto(id_proyecto: str):
     cfg = CONFIG_PROYECTOS[id_proyecto]
@@ -341,34 +356,35 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
     if df_dia.empty:
-        st.warning("⚠️ Sin datos para la fecha seleccionada.")
+        st.warning("⚠️ Sin registros telemétricos para el día seleccionado.")
         return
     ultimo_registro = df_dia.iloc[-1]
 
     st.markdown(f"### 🗺️ Monitoreo Satelital — <span style='color:#58a6ff'>{id_proyecto}</span>", unsafe_allow_html=True)
-    st.caption("Haz clic en el marcador azul del mapa para desplegar la radiografía estructural interactiva.")
+    st.caption("Haz clic en el marcador azul del mapa para inspeccionar la radiografía interactiva del pozo.")
 
+    # Generación de Mapa
     m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satelital', control=False).add_to(m)
     folium.Marker([cfg["lat"], cfg["lon"]], tooltip=f"Ver Radiografía {id_proyecto}", icon=folium.Icon(color="blue", icon="info-sign")).add_to(m)
 
-    mapa_output = st_folium(m, width="100%", height=400, key=f"mapa_{id_proyecto}")
+    mapa_output = st_folium(m, width="100%", height=380, key=f"mapa_{id_proyecto}")
 
+    # Gatillo del mapa para abrir radiografía
     if mapa_output and mapa_output.get("last_object_clicked"):
         st.session_state[f"abrir_radio_{id_proyecto}"] = True
+        st.rerun()
 
-    # Despliegue seguro de modales controlados por estado de sesión
+    # CONTROL DE DESPLIEGUE SEGURO DE MODALES CON STATE-MACHINE
     if st.session_state.get(f"abrir_radio_{id_proyecto}"):
-        # Apagamos el flag inmediatamente para evitar bucles de renderizado al interactuar
-        st.session_state[f"abrir_radio_{id_proyecto}"] = False
         modal_radiografia(id_proyecto, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico)
 
     sensor_idx = st.session_state.get(f"sensor_modal_{id_proyecto}")
     if sensor_idx is not None:
         modal_sensor(id_proyecto, sensor_idx, df_data, ultimo_registro, cols_vwc, cols_temp, cols_pt, cols_dpt, fecha_sel, variable_grafico)
 
-    # Tabla compacta inferior de estado actual
-    st.markdown("##### 📊 Estado Actual de Sensores")
+    # Resumen de Telemetría Inferior
+    st.markdown("##### 📊 Cuadro de Estado de Sensores")
     data_resumen = []
     for i in range(num_sens):
         prof = formatear_profundidad(cols_vwc[i]) if i < len(cols_vwc) else "N/A"
@@ -383,7 +399,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
 
 # ─────────────────────────────────────────────
-# 9. CONTROL DE PESTAÑAS
+# 9. PESTAÑAS DE NAVEGACIÓN PRINCIPAL
 # ─────────────────────────────────────────────
 tab_drf, tab_romeral = st.tabs(["📍 Estación DRF Chile", "📍 Estación El Romeral"])
 
