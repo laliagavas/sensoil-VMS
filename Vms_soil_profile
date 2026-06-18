@@ -1,0 +1,396 @@
+"""
+vms_soil_profile.py
+────────────────────────────────────────────────────────────
+Módulo VMS GeoCloud — Sensoil
+Genera el SVG dinámico del perfil de suelo con sensores.
+Reemplaza completamente la imagen JPEG + coordenadas hardcodeadas.
+
+USO en app.py:
+    from vms_soil_profile import render_soil_profile
+
+    html_code = render_soil_profile(
+        id_proyecto   = "DRF",
+        cfg           = CONFIG_PROYECTOS["DRF"],
+        cols_vwc      = cols_vwc,
+        cols_temp     = cols_temp,
+        cols_pt       = cols_pt,
+        cols_dpt      = cols_dpt,
+        ultimo_reg    = ultimo_registro,   # pd.Series
+    )
+    click_index = st.components.v1.html(html_code, height=680, scrolling=False)
+────────────────────────────────────────────────────────────
+"""
+
+from __future__ import annotations
+import json
+import math
+from typing import Any
+
+
+# ─────────────────────────────────────────────────────────────
+# CONFIGURACIÓN DE CAPAS DE SUELO POR PROYECTO
+# Cada capa: (color_hex, label)
+# Se apilan de arriba a abajo en orden.
+# ─────────────────────────────────────────────────────────────
+SOIL_LAYERS: dict[str, list[tuple[str, str]]] = {
+    "DRF": [
+        ("#A0875A", "Relleno superficial"),
+        ("#8C7050", "Suelo arcilloso"),
+        ("#7A5C40", "Arcilla densa"),
+        ("#6B4E34", "Arcilla compacta"),
+        ("#5C4128", "Roca base"),
+        ("#4A3220", "Roca profunda"),
+    ],
+    "ROMERAL": [
+        ("#9E8B6A", "Relleno superficial"),
+        ("#8A7255", "Limo arenoso"),
+        ("#785E42", "Arcilla limosa"),
+        ("#664A30", "Arcilla compacta"),
+        ("#563D22", "Grava fina"),
+        ("#422E18", "Roca base"),
+        ("#321F0E", "Roca profunda"),
+        ("#241408", "Roca dura"),
+    ],
+}
+
+# Ángulo de instalación de la manga (grados desde vertical)
+CABLE_ANGLE_DEG: dict[str, float] = {
+    "DRF":     55.0,
+    "ROMERAL": 55.0,
+}
+
+# ─────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────
+
+def _fmt_depth(col_name: str) -> str:
+    """'VWC_1_40cm' → '0.40 m'   |   'VWC_3_184cm' → '1.84 m'"""
+    try:
+        parts = col_name.split("_")
+        if len(parts) >= 3:
+            cm = float(parts[2].replace("cm", "").replace("CM", ""))
+            return f"{cm / 100:.2f} m"
+    except Exception:
+        pass
+    return "N/A"
+
+
+def _depth_cm(col_name: str) -> float:
+    """Devuelve la profundidad en cm desde el nombre de columna."""
+    try:
+        parts = col_name.split("_")
+        if len(parts) >= 3:
+            return float(parts[2].replace("cm", "").replace("CM", ""))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _safe(val: Any, decimals: int = 2) -> str:
+    """Formatea un valor numérico de forma segura."""
+    try:
+        return f"{float(val):.{decimals}f}"
+    except Exception:
+        return "—"
+
+
+# ─────────────────────────────────────────────────────────────
+# GEOMETRÍA DEL PERFIL
+# ─────────────────────────────────────────────────────────────
+# Dimensiones fijas del SVG (en píxeles del viewBox)
+SVG_W       = 680
+SVG_H       = 660
+SURFACE_Y   = 120        # línea del suelo
+MAX_DEPTH_Y = 610        # y correspondiente a 6 m de profundidad
+CABLE_X0    = 310        # x donde el cable sale a superficie (bajo la estación)
+LAYER_H     = 82         # altura de cada capa de suelo (px)
+
+
+def _sensor_xy(depth_cm: float, angle_deg: float) -> tuple[float, float]:
+    """
+    Calcula (x, y) del sensor en el SVG a partir de su profundidad real.
+    El cable va inclinado desde (CABLE_X0, SURFACE_Y) con el ángulo dado.
+    """
+    depth_m = depth_cm / 100.0
+    # Escala: 6 m reales = (MAX_DEPTH_Y - SURFACE_Y) píxeles
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / 6.0
+    dy = depth_m * px_per_meter                  # desplazamiento vertical
+    angle_rad = math.radians(angle_deg)
+    dx = dy * math.tan(angle_rad)                # desplazamiento horizontal
+    return (CABLE_X0 + dx, SURFACE_Y + dy)
+
+
+# ─────────────────────────────────────────────────────────────
+# GENERADOR PRINCIPAL
+# ─────────────────────────────────────────────────────────────
+
+def render_soil_profile(
+    id_proyecto: str,
+    cfg: dict,
+    cols_vwc:  list[str],
+    cols_temp: list[str],
+    cols_pt:   list[str],
+    cols_dpt:  list[str],
+    ultimo_reg,           # pd.Series con el último registro del día
+) -> str:
+    """
+    Retorna un string HTML completo con el SVG interactivo del perfil de suelo.
+    Se usa directamente con st.components.v1.html().
+    """
+    angle   = CABLE_ANGLE_DEG.get(id_proyecto, 55.0)
+    layers  = SOIL_LAYERS.get(id_proyecto, SOIL_LAYERS["DRF"])
+    n_sens  = cfg["max_sensores"]
+    lat     = cfg.get("lat", 0.0)
+    lon     = cfg.get("lon", 0.0)
+
+    # ── 1. Construir datos de sensores ──────────────────────
+    sensors = []
+    for i in range(n_sens):
+        col_v = cols_vwc[i]  if i < len(cols_vwc)  else None
+        col_t = cols_temp[i] if i < len(cols_temp) else None
+        col_p = cols_pt[i]   if i < len(cols_pt)   else None
+        col_d = cols_dpt[i]  if i < len(cols_dpt)  else None
+
+        depth_cm = _depth_cm(col_v) if col_v else (i + 1) * 80.0
+        sx, sy   = _sensor_xy(depth_cm, angle)
+
+        def g(col, dec=2):
+            if col is None:
+                return "N/D"
+            try:
+                return _safe(ultimo_reg[col], dec)
+            except Exception:
+                return "N/D"
+
+        sensors.append({
+            "idx":      i,
+            "label":    f"S{i+1}",
+            "depth":    _fmt_depth(col_v) if col_v else f"{depth_cm/100:.2f} m",
+            "depth_cm": depth_cm,
+            "x":        round(sx, 1),
+            "y":        round(sy, 1),
+            "vwc":      g(col_v, 2),
+            "temp":     g(col_t, 1),
+            "pt":       g(col_p, 0),
+            "dpt":      g(col_d, 1),
+        })
+
+    # ── 2. Construir capas de suelo (SVG rects) ─────────────
+    layer_rects = []
+    for idx, (color, label) in enumerate(layers):
+        y_top = SURFACE_Y + 2 + idx * LAYER_H
+        # Evitar que la última capa se salga del viewBox
+        h = min(LAYER_H, SVG_H - y_top - 4)
+        if h <= 0:
+            break
+        layer_rects.append(
+            f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
+            f'<rect x="0" y="{y_top + h - 1}" width="{SVG_W}" height="1.5" '
+            f'fill="#2a1a08" opacity="0.4"/>'
+            f'<text x="14" y="{y_top + 18}" '
+            f'font-family="\'Segoe UI\',sans-serif" font-size="11" '
+            f'fill="#f0ddb8" opacity="0.65">{label}</text>'
+        )
+
+    # Cable: desde estación hasta el último sensor (+ 20px más)
+    last = sensors[-1]
+    cable_end_x = last["x"] + 20 * math.tan(math.radians(angle))
+    cable_end_y = min(last["y"] + 20, SVG_H - 10)
+
+    # ── 3. Construir pines SVG ───────────────────────────────
+    pin_elements = []
+    for s in sensors:
+        px, py = s["x"], s["y"]
+        # Tooltip a la derecha o izquierda según espacio disponible
+        tip_x  = px + 14
+        tip_w  = 152
+        tip_h  = 76
+        if tip_x + tip_w > SVG_W - 10:
+            tip_x = px - tip_w - 14
+
+        pin_elements.append(f"""
+        <g class="vms-sensor" data-idx="{s['idx']}" style="cursor:pointer">
+          <!-- Halo pulsante -->
+          <circle class="vms-halo" cx="{px}" cy="{py}" r="12"
+                  fill="#1f7fe8" opacity="0.18"/>
+          <!-- Cuerpo del sensor -->
+          <circle cx="{px}" cy="{py}" r="8"
+                  fill="#1a5bbf" stroke="#7dc3ff" stroke-width="1.8"/>
+          <circle cx="{px}" cy="{py}" r="3.5" fill="#7dc3ff"/>
+          <!-- Etiqueta fija -->
+          <rect x="{px + 11}" y="{py - 11}" width="30" height="16"
+                rx="4" fill="#0f2a4a" stroke="#1f7fe8" stroke-width="0.8"/>
+          <text x="{px + 26}" y="{py + 2}"
+                text-anchor="middle" dominant-baseline="central"
+                font-family="'Segoe UI',sans-serif" font-size="10"
+                font-weight="600" fill="#7dc3ff">{s['label']}</text>
+          <!-- Tooltip (visible al hover) -->
+          <g class="vms-tip" opacity="0" pointer-events="none">
+            <rect x="{tip_x - 4}" y="{py - 14}" width="{tip_w}" height="{tip_h}"
+                  rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"
+                  filter="url(#dropshadow)"/>
+            <text x="{tip_x + 2}" y="{py + 4}"
+                  font-family="'Segoe UI',sans-serif" font-size="11"
+                  font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
+            <text x="{tip_x + 2}" y="{py + 18}"
+                  font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+              VWC: <tspan font-weight="600" fill="#58d8a8">{s['vwc']} %</tspan>
+              &nbsp; T: <tspan font-weight="600" fill="#f6a03a">{s['temp']} °C</tspan>
+            </text>
+            <text x="{tip_x + 2}" y="{py + 34}"
+                  font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+              Presión: <tspan font-weight="600" fill="#e07af5">{s['pt']} mbar</tspan>
+            </text>
+            <text x="{tip_x + 2}" y="{py + 50}"
+                  font-family="'Segoe UI',sans-serif" font-size="10"
+                  fill="#6a9fcc">Clic para análisis completo →</text>
+          </g>
+        </g>""")
+
+    sensors_json = json.dumps(sensors)
+
+    # ── 4. HTML completo ─────────────────────────────────────
+    timestamp_str = ""
+    try:
+        timestamp_str = ultimo_reg["TIMESTAMP"].strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  html, body {{ background:transparent; overflow:hidden; }}
+  svg {{ display:block; width:100%; }}
+
+  @keyframes vms-pulse {{
+    0%,100% {{ r:12; opacity:0.18; }}
+    50%      {{ r:17; opacity:0.09; }}
+  }}
+  .vms-halo {{ animation: vms-pulse 2.4s ease-in-out infinite; }}
+
+  .vms-sensor {{ transition: filter 0.15s; }}
+  .vms-sensor:hover {{ filter: brightness(1.25); }}
+  .vms-sensor:hover .vms-tip {{ opacity:1 !important; }}
+
+  .vms-selected circle:nth-child(2) {{ fill:#155ab0; stroke:#ffe066; stroke-width:2.2; }}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 {SVG_W} {SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="sky-grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#c8e4f5"/>
+    <stop offset="100%" stop-color="#a8cce4"/>
+  </linearGradient>
+  <linearGradient id="surface-grad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#b89a60"/>
+    <stop offset="100%" stop-color="#8a7040"/>
+  </linearGradient>
+  <filter id="dropshadow" x="-10%" y="-10%" width="120%" height="120%">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+</defs>
+
+<!-- Cielo -->
+<rect x="0" y="0" width="{SVG_W}" height="{SURFACE_Y}" fill="url(#sky-grad)"/>
+
+<!-- Texto encabezado -->
+<text x="14" y="22" font-family="'Segoe UI',sans-serif"
+      font-size="13" font-weight="700" fill="#1a3a5c">{id_proyecto} — VMS GeoCloud · Sensoil</text>
+<text x="14" y="40" font-family="'Segoe UI',sans-serif"
+      font-size="10" fill="#4a7090">Última lectura: {timestamp_str} · Lat {lat:.4f} / Lon {lon:.4f}</text>
+<text x="14" y="56" font-family="'Segoe UI',sans-serif"
+      font-size="10" fill="#4a8a6a">Haz hover para ver datos · Clic para análisis completo</text>
+
+<!-- Estación VMIS -->
+<rect x="262" y="52" width="96" height="58" rx="8"
+      fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
+<rect x="270" y="40" width="80" height="14" rx="3"
+      fill="#4a90d9" stroke="#2a70b9" stroke-width="0.8"/>
+<text x="310" y="72" text-anchor="middle" dominant-baseline="central"
+      font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#1a3a5c">VMIS</text>
+<text x="310" y="90" text-anchor="middle"
+      font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
+<!-- Antena -->
+<line x1="346" y1="40" x2="354" y2="26" stroke="#4a7a9a" stroke-width="1.5"/>
+<circle cx="356" cy="24" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
+
+<!-- Superficie del suelo -->
+<rect x="0" y="{SURFACE_Y}" width="{SVG_W}" height="10"
+      fill="url(#surface-grad)"/>
+
+<!-- Capas de suelo -->
+{"".join(layer_rects)}
+
+<!-- Cable de sensores (doble línea = manguera multipar) -->
+<line x1="{CABLE_X0}" y1="{SURFACE_Y + 8}"
+      x2="{cable_end_x:.1f}" y2="{cable_end_y:.1f}"
+      stroke="#3a8a3a" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+<line x1="{CABLE_X0 + 4}" y1="{SURFACE_Y + 8}"
+      x2="{cable_end_x + 4:.1f}" y2="{cable_end_y:.1f}"
+      stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+
+<!-- Ángulo de instalación -->
+<path d="M {CABLE_X0} {SURFACE_Y + 22} A 22 22 0 0 1 {CABLE_X0 + 22 * math.sin(math.radians(angle)):.1f} {SURFACE_Y + 22 - 22 * (1 - math.cos(math.radians(angle))):.1f}"
+      fill="none" stroke="#ffffff" stroke-width="1" opacity="0.6"/>
+<text x="{CABLE_X0 + 28}" y="{SURFACE_Y + 30}"
+      font-family="'Segoe UI',sans-serif" font-size="11" fill="#ffffff" opacity="0.8">{angle:.0f}°</text>
+
+<!-- Sensores interactivos -->
+{"".join(pin_elements)}
+
+<!-- Regla de profundidad (derecha) -->
+<line x1="638" y1="{SURFACE_Y}" x2="638" y2="{MAX_DEPTH_Y}"
+      stroke="#ffffff" stroke-width="0.5" opacity="0.3"/>
+{"".join([
+    f'<line x1="632" y1="{SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // 6}" '
+    f'x2="644" y2="{SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // 6}" '
+    f'stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
+    f'<text x="650" y="{SURFACE_Y + 4 + i * (MAX_DEPTH_Y - SURFACE_Y) // 6}" '
+    f'font-family="\'Segoe UI\',sans-serif" font-size="10" fill="#c8dae8" opacity="0.7">{i} m</text>'
+    for i in range(7)
+])}
+
+</svg>
+
+<script>
+const SENSORS = {sensors_json};
+
+// Enviar evento a Streamlit cuando el usuario hace clic en un sensor
+document.querySelectorAll('.vms-sensor').forEach(el => {{
+  el.addEventListener('click', () => {{
+    const idx = parseInt(el.dataset.idx);
+    // Marcar seleccionado visualmente
+    document.querySelectorAll('.vms-sensor').forEach(e => e.classList.remove('vms-selected'));
+    el.classList.add('vms-selected');
+    // Comunicar a Streamlit
+    window.parent.postMessage({{
+      isstreamlitMessage: true,
+      type: "streamlit:setComponentValue",
+      value: idx
+    }}, "*");
+  }});
+}});
+
+// Ajustar altura del iframe al tamaño real del SVG
+(function resizeFrame() {{
+  const svgEl = document.querySelector('svg');
+  if (!svgEl) return;
+  const h = svgEl.getBoundingClientRect().height;
+  if (h > 50) {{
+    window.parent.postMessage({{
+      isstreamlitMessage: true,
+      type: "streamlit:setFrameHeight",
+      height: Math.ceil(h) + 8
+    }}, "*");
+  }}
+  setTimeout(resizeFrame, 400);
+}})();
+</script>
+</body>
+</html>"""
+
+    return html
