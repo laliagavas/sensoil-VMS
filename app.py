@@ -198,21 +198,36 @@ MAX_DEPTH_Y = 608
 CABLE_X0    = 340
 REF_LINE_X  = 70
 
-
-def sensor_xy(depth_cm_val: float, angle_deg: float):
-    depth_m      = depth_cm_val / 100.0
-    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / 6.0
-    dy           = depth_m * px_per_meter
-    dx           = dy * math.tan(math.radians(angle_deg))
+def sensor_xy(depth_cm_val: float, angle_deg: float, max_depth_cm: float):
+    depth_m = depth_cm_val / 100.0
+    # Evitamos división por cero si max_depth_cm es inválido
+    max_depth_m = max(1.0, max_depth_cm / 100.0) 
+    
+    # ── ESCALA DINÁMICA ──
+    # En lugar de asumir siempre 6 metros, mapeamos la profundidad máxima real al espacio disponible
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / max_depth_m
+    
+    dy = depth_m * px_per_meter
+    dx = dy * math.tan(math.radians(angle_deg))
     return (round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1))
 
-
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
-                         ultimo_reg, selected_idx=0):
-    angle      = cfg.get("angle_deg", 55.0)
-    layers     = cfg.get("soil_layers", [])
-    n_sens     = cfg["max_sensores"]
-    layer_h    = max(60, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
+                        ultimo_reg, selected_idx=0):
+    angle  = cfg.get("angle_deg", 55.0)
+    layers = cfg.get("soil_layers", [])
+    n_sens = cfg["max_sensores"]
+    
+    # 1. Determinar la profundidad máxima real para ajustar la escala del pozo
+    real_max_depth_cm = 600.0 # Valor base por defecto (6 metros)
+    for cv in cols_vwc:
+        dc = depth_cm(cv)
+        if dc > real_max_depth_cm:
+            real_max_depth_cm = dc
+    # Agregamos un pequeño margen inferior (p.ej. 2 metros más en cm) para que no quede al ras del suelo
+    real_max_depth_cm += 200.0 
+    real_max_depth_m = real_max_depth_cm / 100.0
+
+    layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
 
     # ── Datos de cada sensor ──
     sensors = []
@@ -222,7 +237,10 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
         dc = depth_cm(cv) if cv else (i + 1) * 80.0
-        sx, sy = sensor_xy(dc, angle)
+        
+        # Enviamos real_max_depth_cm para que use la nueva escala calibrada
+        sx, sy = sensor_xy(dc, angle, real_max_depth_cm)
+        
         sensors.append({
             "idx":   i,
             "label": f"S{i+1}",
@@ -314,7 +332,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         font-size="10" fill="#38bdf8" opacity="0.9">TERRENO</text>
 """
 
-    # ── Regla de profundidad ──
+    # ── Regla de profundidad dinámica ──
     ruler_marks = 7
     ruler_svg   = [
         f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" '
@@ -322,11 +340,13 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     ]
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
+        # Calculamos el valor correspondiente a la marca en metros reales
+        current_m = (i * real_max_depth_m) / (ruler_marks - 1)
         ruler_svg.append(
             f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" '
             f'stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
             f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" '
-            f'font-size="10" fill="#c8dae8" opacity="0.7">{i} m</text>'
+            f'font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
         )
 
     # ── Ángulo ──
@@ -357,10 +377,8 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
   </linearGradient>
 </defs>
 
-<!-- Cielo -->
 <rect x="0" y="0" width="{SVG_W}" height="{SURFACE_Y}" fill="url(#sky)"/>
 
-<!-- Estación de telemetría -->
 <rect x="292" y="38" width="96" height="58" rx="8"
       fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
 <rect x="300" y="26" width="80" height="14" rx="3"
@@ -373,32 +391,25 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <line x1="376" y1="26" x2="384" y2="12" stroke="#4a7a9a" stroke-width="1.5"/>
 <circle cx="386" cy="10" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
 
-<!-- Superficie -->
 <rect x="0" y="{SURFACE_Y}" width="{SVG_W}" height="10" fill="#9a7c48"/>
 
-<!-- Capas de suelo -->
 {"".join(layer_svg)}
 
-<!-- Línea de referencia vertical -->
 {ref_svg}
 
-<!-- Cable: manguera multipar -->
 <line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}"
       stroke="#2e7a2e" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
 <line x1="{CABLE_X0+4}" y1="{SURFACE_Y+8}" x2="{cable_ex+4:.1f}" y2="{cable_ey:.1f}"
       stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
 
-<!-- Ángulo -->
 <path d="M{CABLE_X0} {SURFACE_Y+24} A24 24 0 0 1 {ax:.1f} {ay:.1f}"
       fill="none" stroke="#ffffff" stroke-width="1" opacity="0.55"/>
 <text x="{CABLE_X0+30}" y="{SURFACE_Y+32}"
       font-family="'Segoe UI',sans-serif" font-size="11"
       fill="#ffffff" opacity="0.75">{angle:.0f}°</text>
 
-<!-- Sensores -->
 {"".join(pins_svg)}
 
-<!-- Regla -->
 {"".join(ruler_svg)}
 
 </svg>
