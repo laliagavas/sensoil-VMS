@@ -188,9 +188,13 @@ def estado_sensor(vwc_str: str) -> str:
     return "NORMAL"
 
 
-# ─────────────────────────────────────────────
-# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO
-# ─────────────────────────────────────────────
+# =============================================================================
+# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION OPTIMIZADA)
+# =============================================================================
+import math
+import json
+
+# Constantes del Lienzo SVG
 SVG_W       = 680
 SVG_H       = 660
 SURFACE_Y   = 100
@@ -199,12 +203,14 @@ CABLE_X0    = 340
 REF_LINE_X  = 70
 
 def sensor_xy(depth_cm_val: float, angle_deg: float, max_depth_cm: float):
+    """
+    Calcula las coordenadas (x, y) de un sensor adaptando la escala 
+    al máximo de profundidad real detectado.
+    """
     depth_m = depth_cm_val / 100.0
-    # Evitamos división por cero si max_depth_cm es inválido
     max_depth_m = max(1.0, max_depth_cm / 100.0) 
     
-    # ── ESCALA DINÁMICA ──
-    # En lugar de asumir siempre 6 metros, mapeamos la profundidad máxima real al espacio disponible
+    # Escala dinámica vertical basada en el peor caso real de profundidad
     px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / max_depth_m
     
     dy = depth_m * px_per_meter
@@ -213,24 +219,31 @@ def sensor_xy(depth_cm_val: float, angle_deg: float, max_depth_cm: float):
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, selected_idx=0):
-    angle  = cfg.get("angle_deg", 55.0)
+    """
+    Genera el HTML con el SVG interactivo del perfil del pozo.
+    """
+    # Forzamos un ángulo cosmético sutil para que muestre inclinación clara
+    # pero evite que el cable se escape horizontalmente por los bordes.
+    angle_visual = 22.0  
     layers = cfg.get("soil_layers", [])
     n_sens = cfg["max_sensores"]
     
-    # 1. Determinar la profundidad máxima real para ajustar la escala del pozo
-    real_max_depth_cm = 600.0 # Valor base por defecto (6 metros)
+    # 1. Determinar la profundidad máxima real de los datos instalados
+    real_max_depth_cm = 600.0
     for cv in cols_vwc:
         dc = depth_cm(cv)
         if dc > real_max_depth_cm:
             real_max_depth_cm = dc
-    # Agregamos un pequeño margen inferior (p.ej. 2 metros más en cm) para que no quede al ras del suelo
+    # Añadimos un pequeño margen inferior (2 metros) para holgura visual
     real_max_depth_cm += 200.0 
     real_max_depth_m = real_max_depth_cm / 100.0
 
     layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
 
-    # ── Datos de cada sensor ──
+    # 2. Construcción de la matriz de datos de cada Sensor
     sensors = []
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / (real_max_depth_cm / 100.0)
+    
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
         ct = cols_temp[i] if i < len(cols_temp) else None
@@ -238,8 +251,11 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
         dc = depth_cm(cv) if cv else (i + 1) * 80.0
         
-        # Enviamos real_max_depth_cm para que use la nueva escala calibrada
-        sx, sy = sensor_xy(dc, angle, real_max_depth_cm)
+        # Mapeo posicional con la inclinación controlada
+        depth_m = dc / 100.0
+        dy = depth_m * px_per_meter
+        dx = dy * math.tan(math.radians(angle_visual))
+        sx, sy = round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1)
         
         sensors.append({
             "idx":   i,
@@ -252,26 +268,24 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
             "dpt":  safe_val(ultimo_reg, cd, 1)  if cd else "N/D",
         })
 
-    # ── Capas de suelo ──
+    # 3. Capas de suelo (LIMPIAS: Solo colores estéticos, sin nombres de roca)
     layer_svg = []
-    for idx, (color, label) in enumerate(layers):
+    for idx, (color, _) in enumerate(layers):
         y_top = SURFACE_Y + 2 + idx * layer_h
         h     = min(layer_h, SVG_H - y_top - 4)
         if h <= 0:
             break
         layer_svg.append(
             f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
-            f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.35"/>'
-            f'<text x="{REF_LINE_X+22}" y="{y_top+16}" font-family="\'Segoe UI\',sans-serif" '
-            f'font-size="11" fill="#f0ddb8" opacity="0.55">{label}</text>'
+            f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.25"/>'
         )
 
-    # ── Cable ──
+    # 4. Remate del extremo inferior del cable principal
     last      = sensors[-1]
-    cable_ex  = last["x"] + 18 * math.tan(math.radians(angle))
-    cable_ey  = min(last["y"] + 18, SVG_H - 8)
+    cable_ex  = last["x"] + 15 * math.tan(math.radians(angle_visual))
+    cable_ey  = min(last["y"] + 15, SVG_H - 8)
 
-    # ── Pines / sensores ──
+    # 5. Generación de los nodos (pines interactivos) de los sensores
     pins_svg = []
     for s in sensors:
         px, py     = s["x"], s["y"]
@@ -281,82 +295,52 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
             tip_x = px - tip_w - 10
         is_sel     = (s["idx"] == selected_idx)
         ring_color = "#ffe066" if is_sel else "#7dc3ff"
-        delay      = f"{s['idx'] * 0.35:.2f}s"
+        delay      = f"{s['idx'] * 0.25:.2f}s"
 
         pins_svg.append(f"""
   <g class="vms-sensor{' vms-selected' if is_sel else ''}" data-idx="{s['idx']}" style="cursor:pointer">
-    <circle class="vms-halo" cx="{px}" cy="{py}" r="13"
-            fill="#1f7fe8" opacity="0.15"
-            style="animation-delay:{delay}"/>
-    <circle cx="{px}" cy="{py}" r="8"
-            fill="#1255b0" stroke="{ring_color}" stroke-width="2.2"/>
+    <circle class="vms-halo" cx="{px}" cy="{py}" r="13" fill="#1f7fe8" opacity="0.15" style="animation-delay:{delay}"/>
+    <circle cx="{px}" cy="{py}" r="8" fill="#1255b0" stroke="{ring_color}" stroke-width="2.2"/>
     <circle cx="{px}" cy="{py}" r="3.5" fill="{ring_color}"/>
-    <rect x="{px+11}" y="{py-11}" width="28" height="15"
-          rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
-    <text x="{px+25}" y="{py-3}"
-          text-anchor="middle" dominant-baseline="central"
-          font-family="'Segoe UI',sans-serif" font-size="10"
-          font-weight="700" fill="{ring_color}">{s['label']}</text>
+    <rect x="{px+11}" y="{py-11}" width="28" height="15" rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
+    <text x="{px+25}" y="{py-3}" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="{ring_color}">{s['label']}</text>
     <g class="vms-tip" opacity="0" pointer-events="none">
-      <rect x="{tip_x-4}" y="{py-14}" width="{tip_w}" height="80"
-            rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
-      <text x="{tip_x+3}" y="{py+4}"
-            font-family="'Segoe UI',sans-serif" font-size="11"
-            font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
-      <text x="{tip_x+3}" y="{py+20}"
-            font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <rect x="{tip_x-4}" y="{py-14}" width="{tip_w}" height="80" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
+      <text x="{tip_x+3}" y="{py+4}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
+      <text x="{tip_x+3}" y="{py+20}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         VWC: <tspan font-weight="700" fill="#3dd68c">{s['vwc']} %</tspan>
         &#160;&#160;T: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+36}"
-            font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <text x="{tip_x+3}" y="{py+36}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mbar</tspan>
         &#160; Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+54}"
-            font-family="'Segoe UI',sans-serif" font-size="10" fill="#4a9aaa">
-        Clic para ver en el panel →
-      </text>
+      <text x="{tip_x+3}" y="{py+54}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#4a9aaa">Clic para fijar selección →</text>
     </g>
   </g>""")
 
-    # ── Línea de profundidad vertical de referencia ──
+    # 6. Línea guía vertical izquierda (Nivel de terreno)
     ref_svg = f"""
-  <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}"
-        stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.8"/>
-  <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}"
-        fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.8"/>
-  <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif"
-        font-size="10" fill="#38bdf8" opacity="0.9">NIVEL DE</text>
-  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif"
-        font-size="10" fill="#38bdf8" opacity="0.9">TERRENO</text>
+  <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}" stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}" fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.6"/>
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">NIVEL DE</text>
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>
 """
 
-    # ── Regla de profundidad dinámica ──
+    # 7. Regla métrica lateral derecha adaptativa
     ruler_marks = 7
-    ruler_svg   = [
-        f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" '
-        f'stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>'
-    ]
+    ruler_svg   = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
-        # Calculamos el valor correspondiente a la marca en metros reales
         current_m = (i * real_max_depth_m) / (ruler_marks - 1)
         ruler_svg.append(
-            f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" '
-            f'stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
-            f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" '
-            f'font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
+            f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
+            f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
         )
-
-    # ── Ángulo ──
-    ar     = math.radians(angle)
-    ax     = CABLE_X0 + 24 * math.sin(ar)
-    ay     = SURFACE_Y + 24 - 24 * (1 - math.cos(ar))
 
     sensors_json = json.dumps(sensors)
 
-    # ── HTML + SVG final ──
+    # 8. Renderizado del Documento HTML e Inyección del SVG
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
 <style>
@@ -379,37 +363,22 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
 <rect x="0" y="0" width="{SVG_W}" height="{SURFACE_Y}" fill="url(#sky)"/>
 
-<rect x="292" y="38" width="96" height="58" rx="8"
-      fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
-<rect x="300" y="26" width="80" height="14" rx="3"
-      fill="#4a90d9" stroke="#2a70b9" stroke-width="0.8"/>
-<text x="340" y="60" text-anchor="middle" dominant-baseline="central"
-      font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700"
-      fill="#1a3a5c">VMS</text>
-<text x="340" y="78" text-anchor="middle"
-      font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
+<rect x="292" y="38" width="96" height="58" rx="8" fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
+<rect x="300" y="26" width="80" height="14" rx="3" fill="#4a90d9" stroke="#2a70b9" stroke-width="0.8"/>
+<text x="340" y="60" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#1a3a5c">VMS</text>
+<text x="340" y="78" text-anchor="middle" font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
 <line x1="376" y1="26" x2="384" y2="12" stroke="#4a7a9a" stroke-width="1.5"/>
 <circle cx="386" cy="10" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
 
 <rect x="0" y="{SURFACE_Y}" width="{SVG_W}" height="10" fill="#9a7c48"/>
 
 {"".join(layer_svg)}
-
 {ref_svg}
 
-<line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}"
-      stroke="#2e7a2e" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
-<line x1="{CABLE_X0+4}" y1="{SURFACE_Y+8}" x2="{cable_ex+4:.1f}" y2="{cable_ey:.1f}"
-      stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
-
-<path d="M{CABLE_X0} {SURFACE_Y+24} A24 24 0 0 1 {ax:.1f} {ay:.1f}"
-      fill="none" stroke="#ffffff" stroke-width="1" opacity="0.55"/>
-<text x="{CABLE_X0+30}" y="{SURFACE_Y+32}"
-      font-family="'Segoe UI',sans-serif" font-size="11"
-      fill="#ffffff" opacity="0.75">{angle:.0f}°</text>
+<line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}" stroke="#2e7a2e" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+<line x1="{CABLE_X0+4}" y1="{SURFACE_Y+8}" x2="{cable_ex+4:.1f}" y2="{cable_ey:.1f}" stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
 
 {"".join(pins_svg)}
-
 {"".join(ruler_svg)}
 
 </svg>
@@ -437,7 +406,6 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 }})();
 </script>
 </body></html>"""
-
 
 # ─────────────────────────────────────────────
 # 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR
