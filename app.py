@@ -7,7 +7,7 @@ import pandas as pd
 # 1. CONFIGURACIÓN GLOBAL
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="VMS GeoCloud - SENSOIL Demo Comercial",
+    page_title="VMS SENSOIL",
     page_icon="🌍",
     layout="wide"
 )
@@ -539,7 +539,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── Encabezado ──
     h_left, h_right = st.columns([3, 1])
     with h_left:
-        st.markdown(f"""<div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">{cfg['nombre_estacion']}</span><span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">POZO INSTRUMENTADO {cfg['angle_deg']:.0f}°</span><span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">PERFIL DE MONITOREO — {id_proyecto}</span></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">{cfg['nombre_estacion']}</span><span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">ESTACIÓN VMS {cfg['angle_deg']:.0f}°</span><span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">PERFIL DE MONITOREO — {id_proyecto}</span></div>""", unsafe_allow_html=True)
     with h_right:
         st.markdown(f"""<div class="vms-card" style="text-align:center; margin-bottom:0;"><div style="font-size:0.7rem; color:#8b949e; letter-spacing:0.05em;">ESTADO GENERAL</div><span class="vms-status-pill {pill_class}">{estado_general}</span><div style="font-size:0.68rem; color:#8b949e; margin-top:6px;">Última actualización:<br>{ts_str}</div></div>""", unsafe_allow_html=True)
 
@@ -630,7 +630,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # 8. PESTAÑAS PRINCIPALES
 # ─────────────────────────────────────────────
 tab_drf, tab_romeral = st.tabs([
-    "📍 Estación DRF Chile",
+    "📍 Estación DRF",
     "📍 Estación El Romeral",
 ])
 
