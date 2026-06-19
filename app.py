@@ -550,7 +550,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
         st.session_state[key_idx] = 0
     sel_idx = st.session_state[key_idx]
 
-    # ── Estado general (heurística simple sobre el sensor seleccionado) ──
+    # ── Estado general ──
     cv_sel = cols_vwc[sel_idx] if sel_idx < len(cols_vwc) else None
     vwc_sel_val = safe_val(ultimo, cv_sel) if cv_sel else "N/D"
     estado_general = estado_sensor(vwc_sel_val)
@@ -560,35 +560,14 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── Encabezado ──
     h_left, h_right = st.columns([3, 1])
     with h_left:
-        st.markdown(f"""
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">
-            {cfg['nombre_estacion']}
-          </span>
-          <span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">
-            POZO INSTRUMENTADO {cfg['angle_deg']:.0f}°
-          </span>
-          <span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">
-            PERFIL DE MONITOREO — {id_proyecto}
-          </span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">{cfg['nombre_estacion']}</span><span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">POZO INSTRUMENTADO {cfg['angle_deg']:.0f}°</span><span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">PERFIL DE MONITOREO — {id_proyecto}</span></div>""", unsafe_allow_html=True)
     with h_right:
-        st.markdown(f"""
-        <div class="vms-card" style="text-align:center; margin-bottom:0;">
-          <div style="font-size:0.7rem; color:#8b949e; letter-spacing:0.05em;">ESTADO GENERAL</div>
-          <span class="vms-status-pill {pill_class}">{estado_general}</span>
-          <div style="font-size:0.68rem; color:#8b949e; margin-top:6px;">
-            Última actualización:<br>{ts_str}
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="vms-card" style="text-align:center; margin-bottom:0;"><div style="font-size:0.7rem; color:#8b949e; letter-spacing:0.05em;">ESTADO GENERAL</div><span class="vms-status-pill {pill_class}">{estado_general}</span><div style="font-size:0.68rem; color:#8b949e; margin-top:6px;">Última actualización:<br>{ts_str}</div></div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-
     col_izq, col_centro, col_der = st.columns([1.1, 1.7, 1.1])
 
-    # ── COLUMNA IZQUIERDA: lista de sensores + simbología ──
+    # ── COLUMNA IZQUIERDA: lista de sensores ──
     with col_izq:
         filas_html = []
         for i in range(n):
@@ -596,23 +575,14 @@ def construir_interfaz_proyecto(id_proyecto: str):
             prof = fmt_depth(cv) if cv else "N/A"
             vwc  = safe_val(ultimo, cv) if cv else "N/D"
             badge_cls = "vms-badge vms-badge-selected" if i == sel_idx else "vms-badge"
-            filas_html.append(f"""
-            <div class="vms-sensor-row">
-              <div style="display:flex; align-items:center;">
-                <span class="{badge_cls}">S{i+1}</span>
-                <span class="vms-sensor-meta">
-                  Profundidad: <b>{prof}</b><br>VWC: <b>{vwc} %</b>
-                </span>
-              </div>
-            </div>
-            """)
-        st.markdown(f"""
-        <div class="vms-card">
-          <h4>📡 SENSORES INSTALADOS</h4>
-          {''.join(filas_html)}
-        </div>
-        """, unsafe_allow_html=True)
+            # Eliminamos los saltos de línea internos para evitar que st.markdown falle
+            filas_html.append(f'<div class="vms-sensor-row"><div style="display:flex; align-items:center;"><span class="{badge_cls}">S{i+1}</span><span class="vms-sensor-meta">Profundidad: <b>{prof}</b><br>VWC: <b>{vwc} %</b></span></div></div>')
+        
+        # Unimos todo en una sola línea de texto HTML limpia
+        html_card_sensores = f'<div class="vms-card"><h4>📡 SENSORES INSTALADOS</h4>{"".join(filas_html)}</div>'
+        st.markdown(html_card_sensores, unsafe_allow_html=True)
 
+        # Botones nativos para cambiar de sensor de forma reactiva
         botones_cols = st.columns(min(4, n))
         for i in range(n):
             with botones_cols[i % len(botones_cols)]:
@@ -620,36 +590,18 @@ def construir_interfaz_proyecto(id_proyecto: str):
                     st.session_state[key_idx] = i
                     st.rerun()
 
-        st.markdown("""
-        <div class="vms-card">
-          <h4>🔎 SIMBOLOGÍA</h4>
-          <div class="vms-legend-row"><span class="vms-legend-icon">💧</span> Humedad volumétrica (VWC)</div>
-          <div class="vms-legend-row"><span class="vms-legend-icon">🌡️</span> Temperatura del suelo</div>
-          <div class="vms-legend-row"><span class="vms-legend-icon">⚡</span> Presión de poros / celda</div>
-          <div class="vms-legend-row"><span class="vms-legend-icon">📏</span> Nivel hidrostático</div>
-          <div class="vms-legend-row"><span class="vms-legend-icon">┄</span> Profundidad vertical de referencia</div>
-          <div class="vms-legend-row"><span class="vms-legend-icon">∠</span> Ángulo de inclinación del pozo</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="vms-card"><h4>🔎 SIMBOLOGÍA</h4><div class="vms-legend-row"><span class="vms-legend-icon">💧</span> Humedad volumétrica (VWC)</div><div class="vms-legend-row"><span class="vms-legend-icon">🌡️</span> Temperatura del suelo</div><div class="vms-legend-row"><span class="vms-legend-icon">⚡</span> Presión de poros / celda</div><div class="vms-legend-row"><span class="vms-legend-icon">📏</span> Nivel hidrostático</div><div class="vms-legend-row"><span class="vms-legend-icon">┄</span> Profundidad vertical de referencia</div><div class="vms-legend-row"><span class="vms-legend-icon">∠</span> Ángulo de inclinación del pozo</div></div>""", unsafe_allow_html=True)
 
     # ── COLUMNA CENTRAL: perfil del pozo (SVG interactivo) ──
     with col_centro:
-        st.caption("Pasa el cursor sobre un sensor para ver sus datos · Clic para seleccionarlo")
+        st.caption("Pasa el cursor sobre un sensor para ver sus datos rápidos · Usa los botones S1-S7 para fijar la telemetría")
         html_code = render_soil_profile(
             id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
             ultimo, selected_idx=sel_idx,
         )
-        click_val = st.components.v1.html(html_code, height=660, scrolling=False)
-        if isinstance(click_val, int) and click_val != sel_idx:
-            st.session_state[key_idx] = click_val
-            st.rerun()
+        st.components.v1.html(html_code, height=660, scrolling=False)
 
-        st.markdown("""
-        <div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">
-          ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo
-          del eje del pozo (inclinación indicada).
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo del eje del pozo (inclinación indicada).</div>""", unsafe_allow_html=True)
 
     # ── COLUMNA DERECHA: info del sensor seleccionado + detalles del pozo ──
     with col_der:
@@ -659,22 +611,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
         cd = cols_dpt[sel_idx]  if sel_idx < len(cols_dpt)  else None
         prof = fmt_depth(cv) if cv else "N/A"
 
-        st.markdown(f"""
-        <div class="vms-card">
-          <h4>ℹ️ INFORMACIÓN DEL SENSOR</h4>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-            <span class="vms-badge vms-badge-selected">S{sel_idx+1}</span>
-            <span style="font-weight:700; color:#e6edf3;">Sensor S{sel_idx+1}</span>
-          </div>
-          <div class="vms-detail-row"><span>Profundidad</span><span>{prof}</span></div>
-          <div class="vms-detail-row"><span>Humedad (VWC)</span><span>{safe_val(ultimo, cv) if cv else 'N/D'} %</span></div>
-          <div class="vms-detail-row"><span>Temperatura</span><span>{safe_val(ultimo, ct, 1) if ct else 'N/D'} °C</span></div>
-          <div class="vms-detail-row"><span>Presión de poros</span><span>{safe_val(ultimo, cp, 0) if cp else 'N/D'} mbar</span></div>
-          <div class="vms-detail-row"><span>Nivel hidrostático</span><span>{safe_val(ultimo, cd, 1) if cd else 'N/D'} cm</span></div>
-          <div class="vms-detail-row"><span>Última lectura</span><span>{ts_str}</span></div>
-          <div class="vms-detail-row"><span>Estado</span><span class="vms-status-pill {pill_class}" style="padding:1px 8px;">{estado_general}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="vms-card"><h4>ℹ️ INFORMACIÓN DEL SENSOR</h4><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="vms-badge vms-badge-selected">S{sel_idx+1}</span><span style="font-weight:700; color:#e6edf3;">Sensor S{sel_idx+1}</span></div><div class="vms-detail-row"><span>Profundidad</span><span>{prof}</span></div><div class="vms-detail-row"><span>Humedad (VWC)</span><span>{safe_val(ultimo, cv) if cv else 'N/D'} %</span></div><div class="vms-detail-row"><span>Temperatura</span><span>{safe_val(ultimo, ct, 1) if ct else 'N/D'} °C</span></div><div class="vms-detail-row"><span>Presión de poros</span><span>{safe_val(ultimo, cp, 0) if cp else 'N/D'} mbar</span></div><div class="vms-detail-row"><span>Nivel hidrostático</span><span>{safe_val(ultimo, cd, 1) if cd else 'N/D'} cm</span></div><div class="vms-detail-row"><span>Última lectura</span><span>{ts_str}</span></div><div class="vms-detail-row"><span>Estado</span><span class="vms-status-pill {pill_class}" style="padding:1px 8px;">{estado_general}</span></div></div>""", unsafe_allow_html=True)
 
         b1, b2 = st.columns(2)
         with b1:
@@ -694,18 +631,9 @@ def construir_interfaz_proyecto(id_proyecto: str):
                 use_container_width=True,
             )
 
-        st.markdown(f"""
-        <div class="vms-card">
-          <h4>🏗️ DETALLES DEL POZO</h4>
-          <div class="vms-detail-row"><span>Inclinación</span><span>{cfg['angle_deg']:.0f}°</span></div>
-          <div class="vms-detail-row"><span>N° de sensores</span><span>{n}</span></div>
-          <div class="vms-detail-row"><span>Diámetro perforación</span><span>{cfg['diametro_perforacion']}</span></div>
-          <div class="vms-detail-row"><span>Tipo de instalación</span><span>{cfg['tipo_instalacion']}</span></div>
-          <div class="vms-detail-row"><span>Fecha instalación</span><span>{cfg['fecha_instalacion']}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="vms-card"><h4>🏗️ DETALLES DEL POZO</h4><div class="vms-detail-row"><span>Inclinación</span><span>{cfg['angle_deg']:.0f}°</span></div><div class="vms-detail-row"><span>N° de sensores</span><span>{n}</span></div><div class="vms-detail-row"><span>Diámetro perforación</span><span>{cfg['diametro_perforacion']}</span></div><div class="vms-detail-row"><span>Tipo de instalación</span><span>{cfg['tipo_instalacion']}</span></div><div class="vms-detail-row"><span>Fecha instalación</span><span>{cfg['fecha_instalacion']}</span></div></div>""", unsafe_allow_html=True)
 
-    # ── Tabla resumen (colapsable) ──
+    # ── Tabla resumen ──
     with st.expander("📊 Ver tabla completa de sensores"):
         resumen = []
         for i in range(n):
@@ -718,7 +646,6 @@ def construir_interfaz_proyecto(id_proyecto: str):
                 "Nivel (cm)":     safe_val(ultimo, cols_dpt[i], 1)  if i < len(cols_dpt)  else "N/D",
             })
         st.dataframe(pd.DataFrame(resumen), use_container_width=True, hide_index=True)
-
 
 # ─────────────────────────────────────────────
 # 8. PESTAÑAS PRINCIPALES
