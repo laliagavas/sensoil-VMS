@@ -2,8 +2,6 @@ import math
 import json
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
 
 # ─────────────────────────────────────────────
 # 1. CONFIGURACIÓN GLOBAL
@@ -34,20 +32,68 @@ st.markdown("""
     .stSelectbox label, .stSidebar label { color: #8b949e; }
     #MainMenu, header, footer { visibility: hidden; }
     hr { border-color: #30363d; }
+
+    /* ── Panel tipo "tarjeta" usado en sensores / leyenda / detalles del pozo ── */
+    .vms-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+    }
+    .vms-card h4 {
+        color: #e6edf3; font-size: 0.85rem; font-weight: 700;
+        margin: 0 0 10px 0; letter-spacing: 0.03em;
+        border-bottom: 1px solid #30363d; padding-bottom: 8px;
+    }
+    .vms-sensor-row {
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 6px 0; border-bottom: 1px dashed #21262d;
+    }
+    .vms-sensor-row:last-child { border-bottom: none; }
+    .vms-badge {
+        display:inline-flex; align-items:center; justify-content:center;
+        width:26px; height:26px; border-radius:50%;
+        background:#1f6feb; color:white; font-weight:700; font-size:0.75rem;
+        margin-right:8px; flex-shrink:0;
+    }
+    .vms-badge-selected { background:#3dd68c !important; color:#0d1117 !important; }
+    .vms-sensor-meta { font-size:0.72rem; color:#8b949e; line-height:1.3; }
+    .vms-sensor-meta b { color:#e6edf3; }
+    .vms-detail-row {
+        display:flex; justify-content:space-between;
+        font-size:0.8rem; padding:5px 0; border-bottom: 1px dashed #21262d;
+    }
+    .vms-detail-row:last-child { border-bottom:none; }
+    .vms-detail-row span:first-child { color:#8b949e; }
+    .vms-detail-row span:last-child { color:#e6edf3; font-weight:600; text-align:right; }
+    .vms-status-pill {
+        display:inline-block; padding:3px 10px; border-radius:20px;
+        font-size:0.72rem; font-weight:700;
+    }
+    .vms-status-normal { background:#1a3a2a; color:#3dd68c; border:1px solid #235c3d; }
+    .vms-status-alerta { background:#3a1a1a; color:#f87171; border:1px solid #5c2323; }
+    .vms-legend-row { display:flex; align-items:center; gap:8px; font-size:0.75rem; color:#c9d1d9; padding:4px 0; }
+    .vms-legend-icon { width:20px; text-align:center; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # 2. CONFIGURACIÓN DE PROYECTOS
 # ─────────────────────────────────────────────
+# NOTA: se eliminaron "lat"/"lon" porque ya no se usa el mapa/geolocalización.
+# Se agregaron campos para el panel "DETALLES DEL POZO" (ajusta los valores
+# reales de cada faena cuando los tengas a mano).
 CONFIG_PROYECTOS = {
     "DRF": {
+        "nombre_estacion": "VMS - DRF - HUASCO",
         "csv_data":    "Romeral.csv",
         "csv_rain":    "RomeralRain.csv",
-        "lat":         -28.493772,
-        "lon":         -71.254531,
         "max_sensores": 7,
         "angle_deg":   55.0,
+        "diametro_perforacion": "HQ (96 mm)",
+        "tipo_instalacion": "Tubo PVC Ø 2\" Ranurado",
+        "fecha_instalacion": "—",
         "soil_layers": [
             ("#A0875A", "Relleno superficial"),
             ("#8C7050", "Suelo arcilloso"),
@@ -58,12 +104,14 @@ CONFIG_PROYECTOS = {
         ],
     },
     "ROMERAL": {
+        "nombre_estacion": "VMS - EL ROMERAL",
         "csv_data":    "Romeral.csv",
         "csv_rain":    "RomeralRain.csv",
-        "lat":         -29.726153,
-        "lon":         -71.221878,
         "max_sensores": 8,
         "angle_deg":   55.0,
+        "diametro_perforacion": "HQ (96 mm)",
+        "tipo_instalacion": "Tubo PVC Ø 2\" Ranurado",
+        "fecha_instalacion": "—",
         "soil_layers": [
             ("#9E8B6A", "Relleno superficial"),
             ("#8A7255", "Limo arenoso"),
@@ -129,14 +177,26 @@ def safe_val(serie, col, decimals=2):
         return "N/D"
 
 
+def estado_sensor(vwc_str: str) -> str:
+    """Heurística simple de estado. Ajusta los umbrales a tu criterio real."""
+    try:
+        v = float(vwc_str)
+        if v > 45 or v < 2:
+            return "ALERTA"
+    except Exception:
+        pass
+    return "NORMAL"
+
+
 # ─────────────────────────────────────────────
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO
 # ─────────────────────────────────────────────
 SVG_W       = 680
 SVG_H       = 660
-SURFACE_Y   = 118
+SURFACE_Y   = 100
 MAX_DEPTH_Y = 608
-CABLE_X0    = 310
+CABLE_X0    = 340
+REF_LINE_X  = 70
 
 
 def sensor_xy(depth_cm_val: float, angle_deg: float):
@@ -147,11 +207,11 @@ def sensor_xy(depth_cm_val: float, angle_deg: float):
     return (round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1))
 
 
-def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt, ultimo_reg):
+def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
+                         ultimo_reg, selected_idx=0):
     angle      = cfg.get("angle_deg", 55.0)
     layers     = cfg.get("soil_layers", [])
     n_sens     = cfg["max_sensores"]
-    lat, lon   = cfg["lat"], cfg["lon"]
     layer_h    = max(60, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
 
     # ── Datos de cada sensor ──
@@ -184,8 +244,8 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         layer_svg.append(
             f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
             f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.35"/>'
-            f'<text x="14" y="{y_top+16}" font-family="\'Segoe UI\',sans-serif" '
-            f'font-size="11" fill="#f0ddb8" opacity="0.6">{label}</text>'
+            f'<text x="{REF_LINE_X+22}" y="{y_top+16}" font-family="\'Segoe UI\',sans-serif" '
+            f'font-size="11" fill="#f0ddb8" opacity="0.55">{label}</text>'
         )
 
     # ── Cable ──
@@ -196,29 +256,29 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     # ── Pines / sensores ──
     pins_svg = []
     for s in sensors:
-        px, py  = s["x"], s["y"]
-        tip_x   = px + 14
-        tip_w   = 158
+        px, py     = s["x"], s["y"]
+        tip_x      = px + 14
+        tip_w      = 160
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 10
-
-        # stagger de animación
-        delay = f"{s['idx'] * 0.35:.2f}s"
+        is_sel     = (s["idx"] == selected_idx)
+        ring_color = "#ffe066" if is_sel else "#7dc3ff"
+        delay      = f"{s['idx'] * 0.35:.2f}s"
 
         pins_svg.append(f"""
-  <g class="vms-sensor" data-idx="{s['idx']}" style="cursor:pointer">
+  <g class="vms-sensor{' vms-selected' if is_sel else ''}" data-idx="{s['idx']}" style="cursor:pointer">
     <circle class="vms-halo" cx="{px}" cy="{py}" r="13"
             fill="#1f7fe8" opacity="0.15"
             style="animation-delay:{delay}"/>
     <circle cx="{px}" cy="{py}" r="8"
-            fill="#1255b0" stroke="#7dc3ff" stroke-width="2"/>
-    <circle cx="{px}" cy="{py}" r="3.5" fill="#7dc3ff"/>
+            fill="#1255b0" stroke="{ring_color}" stroke-width="2.2"/>
+    <circle cx="{px}" cy="{py}" r="3.5" fill="{ring_color}"/>
     <rect x="{px+11}" y="{py-11}" width="28" height="15"
           rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
     <text x="{px+25}" y="{py-3}"
           text-anchor="middle" dominant-baseline="central"
           font-family="'Segoe UI',sans-serif" font-size="10"
-          font-weight="700" fill="#7dc3ff">{s['label']}</text>
+          font-weight="700" fill="{ring_color}">{s['label']}</text>
     <g class="vms-tip" opacity="0" pointer-events="none">
       <rect x="{tip_x-4}" y="{py-14}" width="{tip_w}" height="80"
             rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
@@ -237,10 +297,22 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
       </text>
       <text x="{tip_x+3}" y="{py+54}"
             font-family="'Segoe UI',sans-serif" font-size="10" fill="#4a9aaa">
-        Clic para análisis completo →
+        Clic para ver en el panel →
       </text>
     </g>
   </g>""")
+
+    # ── Línea de profundidad vertical de referencia ──
+    ref_svg = f"""
+  <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}"
+        stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.8"/>
+  <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}"
+        fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.8"/>
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif"
+        font-size="10" fill="#38bdf8" opacity="0.9">NIVEL DE</text>
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif"
+        font-size="10" fill="#38bdf8" opacity="0.9">TERRENO</text>
+"""
 
     # ── Regla de profundidad ──
     ruler_marks = 7
@@ -262,11 +334,6 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     ax     = CABLE_X0 + 24 * math.sin(ar)
     ay     = SURFACE_Y + 24 - 24 * (1 - math.cos(ar))
 
-    try:
-        ts = ultimo_reg["TIMESTAMP"].strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        ts = ""
-
     sensors_json = json.dumps(sensors)
 
     # ── HTML + SVG final ──
@@ -280,7 +347,6 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
   .vms-halo{{animation:vms-pulse 2.6s ease-in-out infinite}}
   .vms-sensor:hover .vms-tip{{opacity:1!important}}
   .vms-sensor:hover circle:nth-child(2){{filter:brightness(1.3)}}
-  .vms-selected circle:nth-child(2){{stroke:#ffe066;stroke-width:2.5}}
 </style>
 </head><body>
 <svg viewBox="0 0 {SVG_W} {SVG_H}" xmlns="http://www.w3.org/2000/svg">
@@ -294,32 +360,27 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <!-- Cielo -->
 <rect x="0" y="0" width="{SVG_W}" height="{SURFACE_Y}" fill="url(#sky)"/>
 
-<!-- Título -->
-<text x="14" y="22" font-family="'Segoe UI',sans-serif" font-size="13"
-      font-weight="700" fill="#1a3a5c">{id_proyecto} — VMS GeoCloud · Sensoil</text>
-<text x="14" y="40" font-family="'Segoe UI',sans-serif" font-size="10"
-      fill="#4a7090">Última lectura: {ts} · {lat:.4f} / {lon:.4f}</text>
-<text x="14" y="56" font-family="'Segoe UI',sans-serif" font-size="10"
-      fill="#3a8a6a">Pasa el cursor sobre un sensor · Clic para análisis completo</text>
-
-<!-- Estación VMIS -->
-<rect x="262" y="50" width="96" height="58" rx="8"
+<!-- Estación de telemetría -->
+<rect x="292" y="38" width="96" height="58" rx="8"
       fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
-<rect x="270" y="38" width="80" height="14" rx="3"
+<rect x="300" y="26" width="80" height="14" rx="3"
       fill="#4a90d9" stroke="#2a70b9" stroke-width="0.8"/>
-<text x="310" y="72" text-anchor="middle" dominant-baseline="central"
+<text x="340" y="60" text-anchor="middle" dominant-baseline="central"
       font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700"
-      fill="#1a3a5c">VMIS</text>
-<text x="310" y="90" text-anchor="middle"
+      fill="#1a3a5c">VMS</text>
+<text x="340" y="78" text-anchor="middle"
       font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
-<line x1="346" y1="38" x2="354" y2="24" stroke="#4a7a9a" stroke-width="1.5"/>
-<circle cx="356" cy="22" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
+<line x1="376" y1="26" x2="384" y2="12" stroke="#4a7a9a" stroke-width="1.5"/>
+<circle cx="386" cy="10" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
 
 <!-- Superficie -->
 <rect x="0" y="{SURFACE_Y}" width="{SVG_W}" height="10" fill="#9a7c48"/>
 
 <!-- Capas de suelo -->
 {"".join(layer_svg)}
+
+<!-- Línea de referencia vertical -->
+{ref_svg}
 
 <!-- Cable: manguera multipar -->
 <line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}"
@@ -347,8 +408,6 @@ const SENSORS = {sensors_json};
 document.querySelectorAll('.vms-sensor').forEach(el => {{
   el.addEventListener('click', () => {{
     const idx = parseInt(el.dataset.idx);
-    document.querySelectorAll('.vms-sensor').forEach(e => e.classList.remove('vms-selected'));
-    el.classList.add('vms-selected');
     window.parent.postMessage({{
       isstreamlitMessage: true,
       type: "streamlit:setComponentValue",
@@ -370,12 +429,12 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 
 
 # ─────────────────────────────────────────────
-# 5. MODAL DE SENSOR
+# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR
 # ─────────────────────────────────────────────
-@st.dialog("📊 Análisis de Sensor Completo", width="large")
-def modal_sensor(id_proyecto, idx, df_data, ultimo_registro,
-                 cols_vwc, cols_temp, cols_pt, cols_dpt,
-                 fecha_sel, variable_grafico):
+@st.dialog("📊 Histórico de Sensor", width="large")
+def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
+                     cols_vwc, cols_temp, cols_pt, cols_dpt,
+                     fecha_sel, variable_grafico):
     cv = cols_vwc[idx]  if idx < len(cols_vwc)  else None
     ct = cols_temp[idx] if idx < len(cols_temp) else None
     cp = cols_pt[idx]   if idx < len(cols_pt)   else None
@@ -389,7 +448,7 @@ def modal_sensor(id_proyecto, idx, df_data, ultimo_registro,
       <h3 style="margin:0;color:#58a6ff;">📡 Sensor S{idx+1} — Profundidad {prof}</h3>
       <p style="margin:0;color:#8b949e;font-size:0.85rem;">
         Estación: <b style="color:#e6edf3">{id_proyecto}</b> &nbsp;|&nbsp;
-        Última Lectura: <b style="color:#e6edf3">
+        Última lectura: <b style="color:#e6edf3">
           {ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')}
         </b>
       </p>
@@ -424,61 +483,21 @@ def modal_sensor(id_proyecto, idx, df_data, ultimo_registro,
         df_g.set_index('Fecha', inplace=True)
         st.line_chart(df_g, use_container_width=True)
 
-    if st.button("← Volver a la Radiografía",
-                 key=f"close_sens_{id_proyecto}_{idx}",
-                 use_container_width=True):
-        st.session_state[f"sensor_modal_{id_proyecto}"] = None
-        st.session_state[f"abrir_radio_{id_proyecto}"]  = True
+        csv_bytes = df_g.to_csv().encode("utf-8")
+        st.download_button(
+            "⬇️ Exportar serie completa (CSV)",
+            data=csv_bytes,
+            file_name=f"{id_proyecto}_S{idx+1}_{col_obj}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
         st.rerun()
 
 
 # ─────────────────────────────────────────────
-# 6. MODAL DE RADIOGRAFÍA
-# ─────────────────────────────────────────────
-@st.dialog("🏗️ Radiografía Estructural del Pozo", width="large")
-def modal_radiografia(id_proyecto, df_data, ultimo_registro,
-                      cols_vwc, cols_temp, cols_pt, cols_dpt,
-                      fecha_sel, variable_grafico):
-    cfg = CONFIG_PROYECTOS[id_proyecto]
-
-    st.markdown(f"""
-    <p style="color:#8b949e;font-size:0.85rem;margin-bottom:10px;">
-      📍 <b style="color:#58a6ff">{id_proyecto}</b> &nbsp;·&nbsp;
-      {cfg['max_sensores']} sensores activos &nbsp;·&nbsp;
-      Pasa el cursor sobre cada sensor para ver los datos.
-      Haz <b>clic</b> para el análisis completo.
-    </p>
-    """, unsafe_allow_html=True)
-
-    html_code = render_soil_profile(
-        id_proyecto, cfg,
-        cols_vwc, cols_temp, cols_pt, cols_dpt,
-        ultimo_registro,
-    )
-
-    click_index = st.components.v1.html(html_code, height=680, scrolling=False)
-
-    if click_index is not None and click_index != "":
-        st.session_state[f"sensor_modal_{id_proyecto}"] = int(click_index)
-        st.session_state[f"abrir_radio_{id_proyecto}"]  = False
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("##### Acceso directo por sensor:")
-    cols_btns = st.columns(cfg["max_sensores"])
-    for i, col in enumerate(cols_btns):
-        with col:
-            prof = fmt_depth(cols_vwc[i]) if i < len(cols_vwc) else ""
-            if st.button(f"S{i+1}\n{prof}",
-                         key=f"quick_{id_proyecto}_{i}",
-                         use_container_width=True):
-                st.session_state[f"sensor_modal_{id_proyecto}"] = i
-                st.session_state[f"abrir_radio_{id_proyecto}"]  = False
-                st.rerun()
-
-
-# ─────────────────────────────────────────────
-# 7. SIDEBAR
+# 6. SIDEBAR
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.image(
@@ -505,16 +524,16 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────
-# 8. PANEL POR PROYECTO
+# 7. PANEL POR PROYECTO
 # ─────────────────────────────────────────────
 def construir_interfaz_proyecto(id_proyecto: str):
-    cfg      = CONFIG_PROYECTOS[id_proyecto]
+    cfg = CONFIG_PROYECTOS[id_proyecto]
     df_data, error = cargar_datos_proyecto(id_proyecto)
     if error or df_data is None:
         st.error(error)
         return
 
-    n        = cfg["max_sensores"]
+    n         = cfg["max_sensores"]
     cols_vwc  = get_cols(df_data, "VWC",  n)
     cols_temp = get_cols(df_data, "TEMP", n)
     cols_pt   = get_cols(df_data, "PT",   n)
@@ -526,63 +545,183 @@ def construir_interfaz_proyecto(id_proyecto: str):
         return
     ultimo = df_dia.iloc[-1]
 
-    st.markdown(
-        f"### 🗺️ Monitoreo Satelital — <span style='color:#58a6ff'>{id_proyecto}</span>",
-        unsafe_allow_html=True,
-    )
-    st.caption("Haz clic en el marcador del mapa para abrir la radiografía interactiva del pozo.")
+    key_idx = f"sensor_sel_{id_proyecto}"
+    if key_idx not in st.session_state:
+        st.session_state[key_idx] = 0
+    sel_idx = st.session_state[key_idx]
 
-    # Mapa
-    m = folium.Map(location=[cfg["lat"], cfg["lon"]], zoom_start=16)
-    folium.TileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satelital', control=False,
-    ).add_to(m)
-    folium.Marker(
-        [cfg["lat"], cfg["lon"]],
-        tooltip=f"Ver Radiografía {id_proyecto}",
-        icon=folium.Icon(color="blue", icon="info-sign"),
-    ).add_to(m)
+    # ── Estado general (heurística simple sobre el sensor seleccionado) ──
+    cv_sel = cols_vwc[sel_idx] if sel_idx < len(cols_vwc) else None
+    vwc_sel_val = safe_val(ultimo, cv_sel) if cv_sel else "N/D"
+    estado_general = estado_sensor(vwc_sel_val)
+    pill_class = "vms-status-normal" if estado_general == "NORMAL" else "vms-status-alerta"
+    ts_str = ultimo['TIMESTAMP'].strftime('%d-%m-%Y %H:%M')
 
-    mapa_out = st_folium(m, width="100%", height=380, key=f"mapa_{id_proyecto}")
-    if mapa_out and mapa_out.get("last_object_clicked"):
-        st.session_state[f"abrir_radio_{id_proyecto}"] = True
-        st.rerun()
+    # ── Encabezado ──
+    h_left, h_right = st.columns([3, 1])
+    with h_left:
+        st.markdown(f"""
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">
+            {cfg['nombre_estacion']}
+          </span>
+          <span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">
+            POZO INSTRUMENTADO {cfg['angle_deg']:.0f}°
+          </span>
+          <span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">
+            PERFIL DE MONITOREO — {id_proyecto}
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
+    with h_right:
+        st.markdown(f"""
+        <div class="vms-card" style="text-align:center; margin-bottom:0;">
+          <div style="font-size:0.7rem; color:#8b949e; letter-spacing:0.05em;">ESTADO GENERAL</div>
+          <span class="vms-status-pill {pill_class}">{estado_general}</span>
+          <div style="font-size:0.68rem; color:#8b949e; margin-top:6px;">
+            Última actualización:<br>{ts_str}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Modal radiografía
-    if st.session_state.get(f"abrir_radio_{id_proyecto}"):
-        modal_radiografia(
-            id_proyecto, df_data, ultimo,
-            cols_vwc, cols_temp, cols_pt, cols_dpt,
-            fecha_sel, variable_grafico,
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col_izq, col_centro, col_der = st.columns([1.1, 1.7, 1.1])
+
+    # ── COLUMNA IZQUIERDA: lista de sensores + simbología ──
+    with col_izq:
+        filas_html = []
+        for i in range(n):
+            cv = cols_vwc[i] if i < len(cols_vwc) else None
+            prof = fmt_depth(cv) if cv else "N/A"
+            vwc  = safe_val(ultimo, cv) if cv else "N/D"
+            badge_cls = "vms-badge vms-badge-selected" if i == sel_idx else "vms-badge"
+            filas_html.append(f"""
+            <div class="vms-sensor-row">
+              <div style="display:flex; align-items:center;">
+                <span class="{badge_cls}">S{i+1}</span>
+                <span class="vms-sensor-meta">
+                  Profundidad: <b>{prof}</b><br>VWC: <b>{vwc} %</b>
+                </span>
+              </div>
+            </div>
+            """)
+        st.markdown(f"""
+        <div class="vms-card">
+          <h4>📡 SENSORES INSTALADOS</h4>
+          {''.join(filas_html)}
+        </div>
+        """, unsafe_allow_html=True)
+
+        botones_cols = st.columns(min(4, n))
+        for i in range(n):
+            with botones_cols[i % len(botones_cols)]:
+                if st.button(f"S{i+1}", key=f"sel_{id_proyecto}_{i}", use_container_width=True):
+                    st.session_state[key_idx] = i
+                    st.rerun()
+
+        st.markdown("""
+        <div class="vms-card">
+          <h4>🔎 SIMBOLOGÍA</h4>
+          <div class="vms-legend-row"><span class="vms-legend-icon">💧</span> Humedad volumétrica (VWC)</div>
+          <div class="vms-legend-row"><span class="vms-legend-icon">🌡️</span> Temperatura del suelo</div>
+          <div class="vms-legend-row"><span class="vms-legend-icon">⚡</span> Presión de poros / celda</div>
+          <div class="vms-legend-row"><span class="vms-legend-icon">📏</span> Nivel hidrostático</div>
+          <div class="vms-legend-row"><span class="vms-legend-icon">┄</span> Profundidad vertical de referencia</div>
+          <div class="vms-legend-row"><span class="vms-legend-icon">∠</span> Ángulo de inclinación del pozo</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── COLUMNA CENTRAL: perfil del pozo (SVG interactivo) ──
+    with col_centro:
+        st.caption("Pasa el cursor sobre un sensor para ver sus datos · Clic para seleccionarlo")
+        html_code = render_soil_profile(
+            id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
+            ultimo, selected_idx=sel_idx,
         )
+        click_val = st.components.v1.html(html_code, height=660, scrolling=False)
+        if isinstance(click_val, int) and click_val != sel_idx:
+            st.session_state[key_idx] = click_val
+            st.rerun()
 
-    # Modal sensor
-    sensor_idx = st.session_state.get(f"sensor_modal_{id_proyecto}")
-    if sensor_idx is not None:
-        modal_sensor(
-            id_proyecto, sensor_idx, df_data, ultimo,
-            cols_vwc, cols_temp, cols_pt, cols_dpt,
-            fecha_sel, variable_grafico,
-        )
+        st.markdown("""
+        <div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">
+          ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo
+          del eje del pozo (inclinación indicada).
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Tabla resumen
-    st.markdown("##### 📊 Estado de Sensores")
-    resumen = []
-    for i in range(n):
-        resumen.append({
-            "Sensor":        f"S{i+1}",
-            "Profundidad":   fmt_depth(cols_vwc[i]) if i < len(cols_vwc) else "N/A",
-            "VWC (%)":       safe_val(ultimo, cols_vwc[i])  if i < len(cols_vwc)  else "N/D",
-            "Temp (°C)":     safe_val(ultimo, cols_temp[i], 1) if i < len(cols_temp) else "N/D",
-            "Presión (mbar)": safe_val(ultimo, cols_pt[i], 0)  if i < len(cols_pt)   else "N/D",
-            "Nivel (cm)":    safe_val(ultimo, cols_dpt[i], 1)  if i < len(cols_dpt)  else "N/D",
-        })
-    st.dataframe(pd.DataFrame(resumen), use_container_width=True, hide_index=True)
+    # ── COLUMNA DERECHA: info del sensor seleccionado + detalles del pozo ──
+    with col_der:
+        cv = cols_vwc[sel_idx]  if sel_idx < len(cols_vwc)  else None
+        ct = cols_temp[sel_idx] if sel_idx < len(cols_temp) else None
+        cp = cols_pt[sel_idx]   if sel_idx < len(cols_pt)   else None
+        cd = cols_dpt[sel_idx]  if sel_idx < len(cols_dpt)  else None
+        prof = fmt_depth(cv) if cv else "N/A"
+
+        st.markdown(f"""
+        <div class="vms-card">
+          <h4>ℹ️ INFORMACIÓN DEL SENSOR</h4>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <span class="vms-badge vms-badge-selected">S{sel_idx+1}</span>
+            <span style="font-weight:700; color:#e6edf3;">Sensor S{sel_idx+1}</span>
+          </div>
+          <div class="vms-detail-row"><span>Profundidad</span><span>{prof}</span></div>
+          <div class="vms-detail-row"><span>Humedad (VWC)</span><span>{safe_val(ultimo, cv) if cv else 'N/D'} %</span></div>
+          <div class="vms-detail-row"><span>Temperatura</span><span>{safe_val(ultimo, ct, 1) if ct else 'N/D'} °C</span></div>
+          <div class="vms-detail-row"><span>Presión de poros</span><span>{safe_val(ultimo, cp, 0) if cp else 'N/D'} mbar</span></div>
+          <div class="vms-detail-row"><span>Nivel hidrostático</span><span>{safe_val(ultimo, cd, 1) if cd else 'N/D'} cm</span></div>
+          <div class="vms-detail-row"><span>Última lectura</span><span>{ts_str}</span></div>
+          <div class="vms-detail-row"><span>Estado</span><span class="vms-status-pill {pill_class}" style="padding:1px 8px;">{estado_general}</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("📈 Ver Histórico", key=f"hist_{id_proyecto}", use_container_width=True):
+                modal_historico(
+                    id_proyecto, sel_idx, df_data, ultimo,
+                    cols_vwc, cols_temp, cols_pt, cols_dpt,
+                    fecha_sel, variable_grafico,
+                )
+        with b2:
+            fila_export = ultimo[[c for c in [cv, ct, cp, cd, 'TIMESTAMP'] if c]]
+            st.download_button(
+                "⬇️ Exportar día",
+                data=pd.DataFrame([fila_export]).to_csv(index=False).encode("utf-8"),
+                file_name=f"{id_proyecto}_S{sel_idx+1}_{fecha_sel}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        st.markdown(f"""
+        <div class="vms-card">
+          <h4>🏗️ DETALLES DEL POZO</h4>
+          <div class="vms-detail-row"><span>Inclinación</span><span>{cfg['angle_deg']:.0f}°</span></div>
+          <div class="vms-detail-row"><span>N° de sensores</span><span>{n}</span></div>
+          <div class="vms-detail-row"><span>Diámetro perforación</span><span>{cfg['diametro_perforacion']}</span></div>
+          <div class="vms-detail-row"><span>Tipo de instalación</span><span>{cfg['tipo_instalacion']}</span></div>
+          <div class="vms-detail-row"><span>Fecha instalación</span><span>{cfg['fecha_instalacion']}</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Tabla resumen (colapsable) ──
+    with st.expander("📊 Ver tabla completa de sensores"):
+        resumen = []
+        for i in range(n):
+            resumen.append({
+                "Sensor":         f"S{i+1}",
+                "Profundidad":    fmt_depth(cols_vwc[i]) if i < len(cols_vwc) else "N/A",
+                "VWC (%)":        safe_val(ultimo, cols_vwc[i])  if i < len(cols_vwc)  else "N/D",
+                "Temp (°C)":      safe_val(ultimo, cols_temp[i], 1) if i < len(cols_temp) else "N/D",
+                "Presión (mbar)": safe_val(ultimo, cols_pt[i], 0)  if i < len(cols_pt)   else "N/D",
+                "Nivel (cm)":     safe_val(ultimo, cols_dpt[i], 1)  if i < len(cols_dpt)  else "N/D",
+            })
+        st.dataframe(pd.DataFrame(resumen), use_container_width=True, hide_index=True)
 
 
 # ─────────────────────────────────────────────
-# 9. PESTAÑAS PRINCIPALES
+# 8. PESTAÑAS PRINCIPALES
 # ─────────────────────────────────────────────
 tab_drf, tab_romeral = st.tabs([
     "📍 Estación DRF Chile",
