@@ -379,7 +379,7 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 </body></html>"""
 
 # ─────────────────────────────────────────────
-# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR
+# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR (REPARADO)
 # ─────────────────────────────────────────────
 @st.dialog("📊 Histórico de Sensor", width="large")
 def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
@@ -414,12 +414,17 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
     st.markdown("---")
     st.markdown(f"#### 📈 Historial — {variable_grafico} (Últimos 7 días)")
 
-    fecha_max = pd.Timestamp(fecha_sel)
-    fecha_min = fecha_max - pd.Timedelta(days=7)
+    # ── CORRECCIÓN CRÍTICA DE FECHAS ──
+    # Convertimos a datetime64[ns] compatible y extendemos la fecha máxima al final del día (23:59:59)
+    fecha_max = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    fecha_min = pd.to_datetime(fecha_sel) - pd.Timedelta(days=7)
+
+    # Nos aseguramos que la columna TIMESTAMP del dataframe filtrado no tenga problemas de zona horaria
     df_f = df_data[
         (df_data['TIMESTAMP'] >= fecha_min) &
-        (df_data['TIMESTAMP'] <= fecha_max + pd.Timedelta(days=1))
-    ]
+        (df_data['TIMESTAMP'] <= fecha_max)
+    ].copy()
+    
     mapeo = {
         "Humedad (VWC %)":        cv,
         "Temperatura (°C)":        ct,
@@ -427,22 +432,29 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
         "Nivel (cm)":              cd,
     }
     col_obj = mapeo.get(variable_grafico)
+    
     if col_obj and col_obj in df_f.columns:
-        df_g = df_f[['TIMESTAMP', col_obj]].copy()
+        # Eliminamos filas donde la variable sea nula para que no rompa la línea del gráfico
+        df_g = df_f[['TIMESTAMP', col_obj]].dropna().copy()
         df_g.columns = ['Fecha', f"S{idx+1} ({prof})"]
         df_g.set_index('Fecha', inplace=True)
         
-        # CORREGIDO: st.line_chart nativo sustituye cualquier dependencia residual de Plotly
-        st.line_chart(df_g, use_container_width=True)
+        if not df_g.empty:
+            # Despliega el gráfico nativo de Streamlit con los datos ya indexados por tiempo
+            st.line_chart(df_g, use_container_width=True)
 
-        csv_bytes = df_g.to_csv().encode("utf-8")
-        st.download_button(
-            "⬇️ Exportar serie completa (CSV)",
-            data=csv_bytes,
-            file_name=f"{id_proyecto}_S{idx+1}_{col_obj}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+            csv_bytes = df_g.to_csv().encode("utf-8")
+            st.download_button(
+                "⬇️ Exportar serie completa (CSV)",
+                data=csv_bytes,
+                file_name=f"{id_proyecto}_S{idx+1}_{col_obj}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        else:
+            st.warning("⚠️ No se encontraron puntos de datos válidos para graficar en el rango seleccionado.")
+    else:
+        st.error("⚠️ La variable seleccionada no coincide con ninguna columna válida en el archivo CSV.")
 
     if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
         st.rerun()
