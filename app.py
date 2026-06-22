@@ -733,10 +733,10 @@ with tab_monitoreo:
     ])
 
     with tab_drf:
-        construir_interfaz_proyecto("Deposito de Relaves A")
+        construir_interfaz_proyecto("DRF")
 
     with tab_romeral:
-        construir_interfaz_proyecto("Deposito de Relaves B")
+        construir_interfaz_proyecto("ROMERAL")
 
 
 with tab_avanzado:
