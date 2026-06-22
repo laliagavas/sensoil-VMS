@@ -224,55 +224,39 @@ def estado_sensor(vwc_str: str) -> str:
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (FIJADO A ESCALA REAL 6 METROS)
 # =============================================================================
 # ── REEMPLAZA SOLO la sección 4 completa en tu app.py ──
-# Los cambios clave están marcados con # ← FIX
+# Además agrega "profundidad_max_m" en CONFIG_PROYECTOS (ver abajo)
 
-SVG_W       = 680
-SURFACE_Y   = 100
-CABLE_X0    = 340
-REF_LINE_X  = 70
+# ─────────────────────────────────────────────────────────────────────────────
+# CAMBIO EN CONFIG_PROYECTOS: agrega profundidad_max_m a cada proyecto
+# ─────────────────────────────────────────────────────────────────────────────
+# "DRF":     { ..., "profundidad_max_m": 10.0, ... }
+# "ROMERAL": { ..., "profundidad_max_m": 30.0, ... }
+# ─────────────────────────────────────────────────────────────────────────────
+
+SVG_W      = 680
+SURFACE_Y  = 100
+CABLE_X0   = 340
+REF_LINE_X = 70
+PIXELS_PER_METER = 78   # px por metro — ajusta si quieres más o menos densidad visual
 
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, rain_val, bat_val, selected_idx=0):
-    angle_visual = 22.0
-    layers  = cfg.get("soil_layers", [])
-    n_sens  = cfg["max_sensores"]
-    densidad = cfg["densidad"]
+    angle_visual  = 22.0
+    layers        = cfg.get("soil_layers", [])
+    n_sens        = cfg["max_sensores"]
+    densidad      = cfg["densidad"]
+    prof_max_m    = cfg.get("profundidad_max_m", 10.0)   # ← leído de config
 
-    # ── FIX 1: calcular la profundidad REAL del último sensor ──────────────────
-    # En lugar de fijar 600 cm, medimos el sensor más profundo del proyecto.
-    profundidades = []
-    for i in range(n_sens):
-        cv = cols_vwc[i] if i < len(cols_vwc) else None
-        dc = depth_cm(cv) if cv else (i + 1) * 80.0
-        # Si los cm son muy pequeños (< 150), aplicamos el mismo espaciado visual que antes
-        if dc < 150.0:
-            dist_vis = (i + 1) * 70.0
-        else:
-            dist_vis = dc
-        profundidades.append(dist_vis)
+    # ── Geometría fija basada en profundidad máxima del proyecto ──────────────
+    soil_h      = round(prof_max_m * PIXELS_PER_METER)   # alto útil del suelo
+    MAX_DEPTH_Y = SURFACE_Y + soil_h
+    SVG_H       = MAX_DEPTH_Y + 60                        # margen inferior
 
-    prof_max_cm = max(profundidades) if profundidades else 600.0
+    px_per_m    = PIXELS_PER_METER                        # escala limpia
+    layer_h     = max(40, soil_h // max(len(layers), 1))
 
-    # ── FIX 2: calcular SVG_H dinámicamente para que el último sensor SIEMPRE quepa ──
-    # Queremos que el sensor más profundo quede a un 88% del alto total,
-    # dejando margen inferior de ~12% para que se vea bien.
-    MARGIN_BOTTOM_PX = 80   # píxeles de margen bajo el último sensor
-    MARGIN_TOP_PX    = SURFACE_Y  # ya definido arriba
-
-    # Fórmula: MAX_DEPTH_Y = SURFACE_Y + prof_max_cm * px_per_cm
-    # Queremos dx = dy * tan(angle), con el último sensor visible.
-    # Primero fijamos una altura mínima razonable de 700 px de área de suelo.
-    MIN_SOIL_H = 700
-    # px_per_cm debe dar al menos MIN_SOIL_H para el sensor más profundo
-    px_per_cm = max(MIN_SOIL_H / prof_max_cm, 1.1)
-
-    MAX_DEPTH_Y = SURFACE_Y + round(prof_max_cm * px_per_cm)
-    SVG_H       = MAX_DEPTH_Y + MARGIN_BOTTOM_PX  # ← FIX: altura total dinámica
-
-    layer_h = max(40, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
-
-    # ── Calcular posiciones de sensores ───────────────────────────────────────
+    # ── Posiciones de sensores ────────────────────────────────────────────────
     sensors = []
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
@@ -280,22 +264,22 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
 
-        dc = depth_cm(cv) if cv else (i + 1) * 80.0
-        dist_vis = (i + 1) * 70.0 if dc < 150.0 else dc
+        dc      = depth_cm(cv) if cv else (i + 1) * 80.0
+        depth_m = dc / 100.0
 
-        dy = dist_vis * px_per_cm
-        dx = dy * math.tan(math.radians(angle_visual))
-        sx = round(CABLE_X0 + dx, 1)
-        sy = round(SURFACE_Y + dy, 1)
+        dy  = depth_m * px_per_m
+        dx  = dy * math.tan(math.radians(angle_visual))
+        sx  = round(CABLE_X0 + dx, 1)
+        sy  = round(SURFACE_Y + dy, 1)
+        sy  = min(sy, MAX_DEPTH_Y - 10)   # hard-clamp de seguridad
 
-        # ← FIX 3: ya no limitamos con MAX_DEPTH_Y porque ahora el SVG es suficientemente alto
         vwc_v = safe_val(ultimo_reg, cv, 2) if cv else "N/D"
         gwc_v = calcular_gwc(vwc_v, densidad)
 
         sensors.append({
             "idx":   i,
             "label": f"S{i+1}",
-            "depth": fmt_depth(cv) if cv else f"{dc/100:.2f} m",
+            "depth": fmt_depth(cv) if cv else f"{depth_m:.2f} m",
             "x": sx, "y": sy,
             "vwc":  vwc_v,
             "gwc":  gwc_v,
@@ -304,11 +288,11 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
             "dpt":  safe_val(ultimo_reg, cd, 1) if cd else "N/D",
         })
 
-    # ── Capas de suelo ─────────────────────────────────────────────────────────
+    # ── Capas de suelo ────────────────────────────────────────────────────────
     layer_svg = []
     for idx, (color, _) in enumerate(layers):
         y_top = SURFACE_Y + idx * layer_h
-        h = layer_h if idx < len(layers) - 1 else SVG_H - y_top
+        h     = layer_h if idx < len(layers) - 1 else SVG_H - y_top
         layer_svg.append(
             f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
             f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.25"/>'
@@ -318,13 +302,12 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     cable_ex = last["x"]
     cable_ey = last["y"]
 
-    # ── Pines ──────────────────────────────────────────────────────────────────
+    # ── Pines SVG ─────────────────────────────────────────────────────────────
     pins_svg = []
     for s in sensors:
         px, py  = s["x"], s["y"]
-        tip_w   = 175
-        tip_h   = 116
-        tip_x   = px + 22
+        tip_w, tip_h = 175, 116
+        tip_x = px + 22
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 22
         tip_y = py - 25
@@ -355,30 +338,36 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     </g>
   </g>""")
 
-    # ── Línea de referencia vertical ───────────────────────────────────────────
+    # ── Línea de referencia vertical ──────────────────────────────────────────
     ref_svg = f"""
   <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}"
         stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.6"/>
   <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}"
         fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.6"/>
-  <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">NIVEL DE</text>
-  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>"""
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif"
+        font-size="10" fill="#38bdf8" opacity="0.8">NIVEL DE</text>
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif"
+        font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>"""
 
-    # ── Regla de profundidad ───────────────────────────────────────────────────
-    ruler_marks = 7
-    ruler_svg = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
-    for i in range(ruler_marks):
-        ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
-        current_m = (i * (prof_max_cm / 100.0)) / (ruler_marks - 1)
+    # ── Regla de profundidad — marca cada metro ───────────────────────────────
+    ruler_svg = [
+        f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" '
+        f'stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>'
+    ]
+    for m in range(int(prof_max_m) + 1):
+        ry     = SURFACE_Y + round(m * px_per_m)
+        weight = "0.8" if m % 5 == 0 else "0.4"
+        size   = "11"  if m % 5 == 0 else "9"
+        opacity= "0.9" if m % 5 == 0 else "0.55"
         ruler_svg.append(
-            f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
-            f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
+            f'<line x1="626" y1="{ry}" x2="642" y2="{ry}" '
+            f'stroke="#ffffff" stroke-width="{weight}" opacity="{opacity}"/>'
+            f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" '
+            f'font-size="{size}" fill="#c8dae8" opacity="{opacity}">{m} m</text>'
         )
 
     sensors_json = json.dumps(sensors)
-
-    # ── FIX 4: iframe height = SVG_H + 20 px de margen ────────────────────────
-    iframe_h = SVG_H + 20
+    iframe_h     = SVG_H + 20
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
@@ -419,7 +408,6 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 {"".join(pins_svg)}
 {"".join(ruler_svg)}
 </svg>
-
 <script>
 document.querySelectorAll('.vms-sensor').forEach(el => {{
   el.addEventListener('click', () => {{
@@ -431,7 +419,6 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
     }}, "*");
   }});
 }});
-// ← FIX 5: enviamos la altura EXACTA calculada en Python, sin depender de scrollHeight
 window.parent.postMessage({{
   isstreamlitMessage: true,
   type: "streamlit:setFrameHeight",
@@ -440,6 +427,32 @@ window.parent.postMessage({{
 </script>
 </body></html>"""
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAMBIOS ADICIONALES NECESARIOS EN app.py
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 1. En CONFIG_PROYECTOS, agrega "profundidad_max_m" a cada proyecto:
+#
+# CONFIG_PROYECTOS = {
+#     "DRF": {
+#         ...
+#         "profundidad_max_m": 10.0,   # ← 10 metros de escala visual
+#         ...
+#     },
+#     "ROMERAL": {
+#         ...
+#         "profundidad_max_m": 30.0,   # ← 30 metros de escala visual
+#         ...
+#     },
+# }
+#
+# 2. En construir_interfaz_proyecto(), la llamada al iframe:
+#    Cambia el height fijo por uno dinámico calculado igual que en render_soil_profile:
+#
+#    prof_max_m = cfg.get("profundidad_max_m", 10.0)
+#    svg_h_calc = 100 + round(prof_max_m * 78) + 60 + 20   # SURFACE_Y + soil + margin + iframe
+#    st.components.v1.html(html_code, height=svg_h_calc, scrolling=False)
 # ────────────────────────────────────────────────────────────────────────
 # 5. MODAL OPTIMIZADO — HISTÓRICO CON SELECTORES INTEGRADOS Y PLOTLY
 # ────────────────────────────────────────────────────────────────────────
