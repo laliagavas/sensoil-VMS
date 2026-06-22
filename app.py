@@ -2,6 +2,7 @@ import math
 import json
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
 # ─────────────────────────────────────────────
 # 1. CONFIGURACIÓN GLOBAL
@@ -379,7 +380,7 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 </body></html>"""
 
 # ─────────────────────────────────────────────
-# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR (REPARADO)
+# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR (FIX CON PLOTLY)
 # ─────────────────────────────────────────────
 @st.dialog("📊 Histórico de Sensor", width="large")
 def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
@@ -414,12 +415,10 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
     st.markdown("---")
     st.markdown(f"#### 📈 Historial — {variable_grafico} (Últimos 7 días)")
 
-    # ── CORRECCIÓN CRÍTICA DE FECHAS ──
-    # Convertimos a datetime64[ns] compatible y extendemos la fecha máxima al final del día (23:59:59)
+    # Rango de tiempo inclusivo (últimos 7 días)
     fecha_max = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     fecha_min = pd.to_datetime(fecha_sel) - pd.Timedelta(days=7)
 
-    # Nos aseguramos que la columna TIMESTAMP del dataframe filtrado no tenga problemas de zona horaria
     df_f = df_data[
         (df_data['TIMESTAMP'] >= fecha_min) &
         (df_data['TIMESTAMP'] <= fecha_max)
@@ -432,24 +431,50 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
         "Nivel (cm)":              cd,
     }
     col_obj = mapeo.get(variable_grafico)
+    
     if col_obj and col_obj in df_f.columns:
-        # 1. Extraemos las columnas limpias
         df_g = df_f[['TIMESTAMP', col_obj]].dropna().copy()
-        df_g.columns = ['Fecha', f"S{idx+1} ({prof})"]
-        
-        # ── SOLUCIÓN AQUÍ ──
-        # Forzamos la conversión de la columna 'Fecha' a datetime real de Pandas
+        df_g.columns = ['Fecha', variable_grafico]
         df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
         
-        # Seteamos el índice para el gráfico
-        df_g.set_index('Fecha', inplace=True)
-        
         if not df_g.empty:
-            # Desplegamos el gráfico de líneas nativo con el índice temporal explícito
-            st.line_chart(df_g, use_container_width=True)
+            # ── CONSTRUCCIÓN DEL GRÁFICO CON PLOTLY ──
+            fig = px.line(
+                df_g, 
+                x='Fecha', 
+                y=variable_grafico,
+                title=None,
+                template="plotly_dark"  # Encaja con tu modo oscuro global
+            )
+            
+            # Ajustes visuales para integrarse al look del Dashboard
+            fig.update_traces(line=dict(color='#58a6ff', width=2.5))
+            fig.update_layout(
+                margin=dict(l=40, r=20, t=20, b=40),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(
+                    showgrid=True, 
+                    gridcolor='#21262d', 
+                    title=None,
+                    tickformat='%d %b\n%H:%M'
+                ),
+                yaxis=dict(
+                    showgrid=True, 
+                    gridcolor='#21262d', 
+                    title=None,
+                    # Forzamos un margen extra si los valores son constantes para evitar el colapso visual
+                    rangemode='nonnegative' if "Humedad" in variable_grafico else 'normal'
+                ),
+                hovermode="x unified"
+            )
+            
+            # Renderizar gráfico de Plotly en Streamlit
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-            # Botón de descarga de la serie temporal estructurada
-            csv_bytes = df_g.to_csv().encode("utf-8")
+            # Botón de exportación basado en dataframe indexado
+            df_export = df_g.set_index('Fecha')
+            csv_bytes = df_export.to_csv().encode("utf-8")
             st.download_button(
                 "⬇️ Exportar serie completa (CSV)",
                 data=csv_bytes,
@@ -459,6 +484,11 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
             )
         else:
             st.warning("⚠️ No se encontraron puntos de datos válidos para graficar en el rango seleccionado.")
+    else:
+        st.error("⚠️ La variable seleccionada no coincide con ninguna columna válida.")
+
+    if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
+        st.rerun()
 
 # ─────────────────────────────────────────────
 # 6. SIDEBAR
