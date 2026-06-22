@@ -224,9 +224,9 @@ def estado_sensor(vwc_str: str) -> str:
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION OPTIMIZADA)
 # =============================================================================
 SVG_W       = 680
-SVG_H       = 660
+SVG_H       = 820  # Ajustado de 660 a 820 para dar espacio a sensores profundos
 SURFACE_Y   = 100
-MAX_DEPTH_Y = 608
+MAX_DEPTH_Y = 750  # Ajustado de 608 a 750 para extender las capas de tierra verticalmente
 CABLE_X0    = 340
 REF_LINE_X  = 70
 
@@ -242,13 +242,14 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         dc = depth_cm(cv)
         if dc > real_max_depth_cm:
             real_max_depth_cm = dc
-    real_max_depth_cm += 200.0 
+    real_max_depth_cm += 100.0 
     real_max_depth_m = real_max_depth_cm / 100.0
 
     layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
 
     sensors = []
-    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / (real_max_depth_cm / 100.0)
+    # Usamos la profundidad máxima real para mapear los píxeles sin recortar el fondo
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / real_max_depth_m
     
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
@@ -298,15 +299,15 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         tip_w      = 175
         tip_h      = 116
         
-        # FIX 1: Mayor separación en X (+22) para que el Tooltip no tape el punto del sensor
+        # Desplazado a la derecha para no obstruir el punto
         tip_x      = px + 22
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 22
             
-        # FIX 2: Cálculo dinámico de Y para evitar que se corte abajo en S8
+        # Posicionamiento dinámico vertical
         tip_y      = py - 25
         if tip_y + tip_h > SVG_H - 12:
-            tip_y = SVG_H - tip_h - 12 # Lo empuja hacia arriba si choca con el fondo
+            tip_y = SVG_H - tip_h - 12
 
         is_sel     = (s["idx"] == selected_idx)
         ring_color = "#ffe066" if is_sel else "#7dc3ff"
@@ -351,7 +352,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
   <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>
 """
 
-    ruler_marks = 7
+    ruler_marks = 8
     ruler_svg   = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
@@ -655,7 +656,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
             id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
             ultimo, rain_val, bat_val, selected_idx=sel_idx,
         )
-        st.components.v1.html(html_code, height=660, scrolling=False)
+        st.components.v1.html(html_code, height=830, scrolling=False)
         st.markdown("""<div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo del eje del pozo (inclinación adecuada).</div>""", unsafe_allow_html=True)
 
     with col_der:
@@ -741,7 +742,7 @@ with tab_monitoreo:
 
 with tab_avanzado:
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente (Estilo Grafana).")
     
     # Controles superiores
     col_proj, col_time, col_var = st.columns(3)
