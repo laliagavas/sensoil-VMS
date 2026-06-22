@@ -741,7 +741,7 @@ with tab_monitoreo:
 
 with tab_avanzado:
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente (Estilo Grafana).")
+    st.markdown("")
     
     # Controles superiores
     col_proj, col_time, col_var = st.columns(3)
