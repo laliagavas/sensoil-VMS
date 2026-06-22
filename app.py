@@ -224,11 +224,11 @@ def estado_sensor(vwc_str: str) -> str:
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION OPTIMIZADA)
 # =============================================================================
 SVG_W       = 680
-SVG_H       = 820  # Ajustado de 660 a 820 para dar espacio a sensores profundos
+SVG_H       = 850        # 💡 Aumentado de 660 a 850 para dar más espacio vertical
 SURFACE_Y   = 100
-MAX_DEPTH_Y = 750  # Ajustado de 608 a 750 para extender las capas de tierra verticalmente
+MAX_DEPTH_Y = 780        # 💡 Aumentado de 608 a 780 para que la regla y el fondo bajen por completo
 CABLE_X0    = 340
-REF_LINE_X  = 70
+REF_LINE_X  = 70 
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, rain_val, bat_val, selected_idx=0):
@@ -242,14 +242,14 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         dc = depth_cm(cv)
         if dc > real_max_depth_cm:
             real_max_depth_cm = dc
-    real_max_depth_cm += 100.0 
+    real_max_depth_cm += 200.0 
     real_max_depth_m = real_max_depth_cm / 100.0
 
+    # 💡 Ajustado el cálculo para que las capas de suelo también se estiren hacia abajo
     layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
 
     sensors = []
-    # Usamos la profundidad máxima real para mapear los píxeles sin recortar el fondo
-    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / real_max_depth_m
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / (real_max_depth_cm / 100.0)
     
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
@@ -299,12 +299,10 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         tip_w      = 175
         tip_h      = 116
         
-        # Desplazado a la derecha para no obstruir el punto
         tip_x      = px + 22
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 22
             
-        # Posicionamiento dinámico vertical
         tip_y      = py - 25
         if tip_y + tip_h > SVG_H - 12:
             tip_y = SVG_H - tip_h - 12
@@ -352,7 +350,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
   <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>
 """
 
-    ruler_marks = 8
+    ruler_marks = 7
     ruler_svg   = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
