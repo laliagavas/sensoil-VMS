@@ -221,14 +221,14 @@ def estado_sensor(vwc_str: str) -> str:
     return "NORMAL"
 
 # =============================================================================
-# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION CORREGIDA ESCALA)
+# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION ESCALA REAL CORREGIDA)
 # =============================================================================
 SVG_W       = 680
-SVG_H       = 950        # Incrementamos el lienzo vertical para dar espacio holgado abajo
-SURFACE_Y   = 100        # Nivel de terreno inicial
-MAX_DEPTH_Y = 880        # El punto máximo real donde caerá el ÚLTIMO sensor exacto
+SVG_H       = 950        # Altura del lienzo ampliada para dar aire abajo a todos los sensores
+SURFACE_Y   = 100        # Cota superior del terreno
+MAX_DEPTH_Y = 860        # Cota máxima visual exacta donde se posicionará el SENSOR MÁS PROFUNDO
 CABLE_X0    = 340
-REF_LINE_X  = 70 
+REF_LINE_X  = 70
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, rain_val, bat_val, selected_idx=0):
@@ -237,22 +237,22 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     n_sens = cfg["max_sensores"]
     densidad = cfg["densidad"]
     
-    # 1. Encontrar la profundidad en cm máxima real que traiga el CSV para este pozo
-    max_cm_detectado = 100.0
+    # 1. Detectar dinámicamente la profundidad real en cm más grande declarada en el CSV
+    max_cm_detectado = 10.0
     for cv in cols_vwc:
         dc = depth_cm(cv)
         if dc > max_cm_detectado:
             max_cm_detectado = dc
             
-    # Si por algún motivo da 0 o error, asignamos un por defecto seguro
-    if max_cm_detectado <= 0:
+    # Resguardo por si el CSV viene vacío o corrupto
+    if max_cm_detectado <= 10.0:
         max_cm_detectado = 600.0
 
-    # 2. Las capas del suelo se distribuyen equitativamente en el espacio total útil
+    # 2. Las capas del suelo se distribuyen proporcionalmente en el espacio útil total
     layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
 
-    # 3. FACTOR DE ESCALA DIRECTO: ¿Cuántos píxeles visuales equivalen a 1 cm real?
-    # Mapea desde SURFACE_Y (100px) hasta MAX_DEPTH_Y (880px) de forma exacta
+    # 3. FACTOR DE ESCALA DIRECTO POR CENTÍMETRO REAL (Evita distorsiones de interpolación)
+    # Mapea desde SURFACE_Y (100px) hasta MAX_DEPTH_Y (860px) de forma exacta
     px_per_cm = (MAX_DEPTH_Y - SURFACE_Y) / max_cm_detectado
     
     sensors = []
@@ -262,7 +262,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
         
-        # Profundidad del sensor en cm
+        # Obtener profundidad exacta del sensor desde el nombre de su columna en cm
         dc = depth_cm(cv) if cv else (i + 1) * (max_cm_detectado / n_sens)
         
         # Posicionamiento vertical exacto usando la escala directa por centímetro
@@ -272,7 +272,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         sx = round(CABLE_X0 + dx, 1)
         sy = round(SURFACE_Y + dy, 1)
         
-        # Control estricto de desborde por si las dudas
+        # Control estricto de desborde visual por seguridad
         if sy > MAX_DEPTH_Y:
             sy = MAX_DEPTH_Y
 
@@ -295,7 +295,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     for idx, (color, _) in enumerate(layers):
         y_top = SURFACE_Y + idx * layer_h
         h     = layer_h
-        # La última capa cubre todo el fondo del lienzo SVG
+        # La última capa se extiende hasta cubrir el fondo del lienzo SVG
         if idx == len(layers) - 1:
             h = SVG_H - y_top
         layer_svg.append(
