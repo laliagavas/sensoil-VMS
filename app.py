@@ -90,7 +90,7 @@ st.markdown("""
 # ─────────────────────────────────────────────
 CONFIG_PROYECTOS = {
     "DRF": {
-        "nombre_estacion": "VMS - DRF - HUASCO",
+        "nombre_estacion": "Deposito de Relaves A",
         "csv_data":    "DRF.csv",        
         "csv_rain":    "DRFRain.csv",    
         "csv_monitor": "DRFFTPMonitor.csv",
@@ -110,7 +110,7 @@ CONFIG_PROYECTOS = {
         ],
     },
     "ROMERAL": {
-        "nombre_estacion": "VMS - EL ROMERAL",
+        "nombre_estacion": "Deposito de Relaves B",
         "csv_data":    "Romeral.csv",
         "csv_rain":    "RomeralRain.csv",
         "csv_monitor": "RomeralFTPMonitor.csv",
@@ -728,26 +728,26 @@ tab_monitoreo, tab_avanzado = st.tabs([
 
 with tab_monitoreo:
     tab_drf, tab_romeral = st.tabs([
-        "📍 Estación DRF",
-        "📍 Estación El Romeral",
+        "📍 Deposito de Relaves A",
+        "📍 Deposito de Relaves B",
     ])
 
     with tab_drf:
-        construir_interfaz_proyecto("DRF")
+        construir_interfaz_proyecto("Deposito de Relaves A")
 
     with tab_romeral:
-        construir_interfaz_proyecto("ROMERAL")
+        construir_interfaz_proyecto("Deposito de Relaves B")
 
 
 with tab_avanzado:
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente (Estilo Grafana).")
+    st.markdown("")
     
     # Controles superiores
     col_proj, col_time, col_var = st.columns(3)
     
     with col_proj:
-        proyecto_sel = st.selectbox("Estación de Monitoreo", ["ROMERAL", "DRF"], key="adv_proj_sel")
+        proyecto_sel = st.selectbox("Estación de Monitoreo", ["Deposito de Relaves A", "Deposito de Relaves B"], key="adv_proj_sel")
         cfg_adv = CONFIG_PROYECTOS[proyecto_sel]
         densidad_adv = cfg_adv["densidad"]
         
