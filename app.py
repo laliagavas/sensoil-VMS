@@ -1,5 +1,6 @@
 import math
 import json
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -81,13 +82,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# 2. CONFIGURACIÓN DE PROYECTOS
+# 2. CONFIGURACIÓN DE PROYECTOS (CON DENSIDADES)
 # ─────────────────────────────────────────────
 CONFIG_PROYECTOS = {
     "DRF": {
         "nombre_estacion": "VMS - DRF - HUASCO",
         "csv_data":    "DRF.csv",        
         "csv_rain":    "DRFRain.csv",    
+        "csv_monitor": "DRFFTPMonitor.csv",
+        "densidad":    1.89, # g/cm3
         "max_sensores": 7,
         "angle_deg":   55.0,
         "diametro_perforacion": "HQ (96 mm)",
@@ -106,6 +109,8 @@ CONFIG_PROYECTOS = {
         "nombre_estacion": "VMS - EL ROMERAL",
         "csv_data":    "Romeral.csv",
         "csv_rain":    "RomeralRain.csv",
+        "csv_monitor": "RomeralFTPMonitor.csv",
+        "densidad":    1.75, # g/cm3
         "max_sensores": 8,
         "angle_deg":   55.0,
         "diametro_perforacion": "HQ (96 mm)",
@@ -137,6 +142,33 @@ def cargar_datos_proyecto(id_proyecto: str):
         return df, None
     except Exception as e:
         return None, f"Error al abrir {cfg['csv_data']}: {e}"
+
+def cargar_pluviometro_bateria(id_proyecto: str):
+    cfg = CONFIG_PROYECTOS[id_proyecto]
+    rain_val = "N/D"
+    bat_val = "N/D"
+    
+    # Cargar lluvia desde columna 4 (index 3)
+    if os.path.exists(cfg["csv_rain"]):
+        try:
+            df_rain = pd.read_csv(cfg["csv_rain"], sep=",")
+            if not df_rain.empty:
+                val = df_rain.iloc[-1, 3]
+                rain_val = f"{float(val):.2f}"
+        except Exception:
+            pass
+
+    # Cargar bateria desde columna 3 (index 2)
+    if os.path.exists(cfg["csv_monitor"]):
+        try:
+            df_bat = pd.read_csv(cfg["csv_monitor"], sep=",")
+            if not df_bat.empty:
+                val = df_bat.iloc[-1, 2]
+                bat_val = f"{float(val):.2f}"
+        except Exception:
+            pass
+            
+    return rain_val, bat_val
 
 
 def get_cols(df, prefix, n):
@@ -175,6 +207,14 @@ def safe_val(serie, col, decimals=2):
         return "N/D"
 
 
+def calcular_gwc(vwc_str: str, densidad: float) -> str:
+    try:
+        v = float(vwc_str)
+        return f"{(v / densidad):.2f}"
+    except Exception:
+        return "N/D"
+
+
 def estado_sensor(vwc_str: str) -> str:
     try:
         v = float(vwc_str)
@@ -195,21 +235,12 @@ MAX_DEPTH_Y = 608
 CABLE_X0    = 340
 REF_LINE_X  = 70
 
-def sensor_xy(depth_cm_val: float, angle_deg: float, max_depth_cm: float):
-    depth_m = depth_cm_val / 100.0
-    max_depth_m = max(1.0, max_depth_cm / 100.0) 
-    
-    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / max_depth_m
-    
-    dy = depth_m * px_per_meter
-    dx = dy * math.tan(math.radians(angle_deg))
-    return (round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1))
-
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
-                        ultimo_reg, selected_idx=0):
+                        ultimo_reg, rain_val, bat_val, selected_idx=0):
     angle_visual = 22.0  
     layers = cfg.get("soil_layers", [])
     n_sens = cfg["max_sensores"]
+    densidad = cfg["densidad"]
     
     real_max_depth_cm = 600.0
     for cv in cols_vwc:
@@ -236,12 +267,16 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         dx = dy * math.tan(math.radians(angle_visual))
         sx, sy = round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1)
         
+        vwc_v = safe_val(ultimo_reg, cv, 2) if cv else "N/D"
+        gwc_v = calcular_gwc(vwc_v, densidad)
+
         sensors.append({
             "idx":   i,
             "label": f"S{i+1}",
             "depth": fmt_depth(cv) if cv else f"{dc/100:.2f} m",
             "x": sx, "y": sy,
-            "vwc":   safe_val(ultimo_reg, cv, 2)  if cv else "N/D",
+            "vwc":   vwc_v,
+            "gwc":   gwc_v,
             "temp": safe_val(ultimo_reg, ct, 1)  if ct else "N/D",
             "pt":   safe_val(ultimo_reg, cp, 0)  if cp else "N/D",
             "dpt":  safe_val(ultimo_reg, cd, 1)  if cd else "N/D",
@@ -266,7 +301,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     for s in sensors:
         px, py     = s["x"], s["y"]
         tip_x      = px + 14
-        tip_w      = 160
+        tip_w      = 175
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 10
         is_sel     = (s["idx"] == selected_idx)
@@ -281,17 +316,26 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     <rect x="{px+11}" y="{py-11}" width="28" height="15" rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
     <text x="{px+25}" y="{py-3}" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="{ring_color}">{s['label']}</text>
     <g class="vms-tip" opacity="0" pointer-events="none">
-      <rect x="{tip_x-4}" y="{py-14}" width="{tip_w}" height="80" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
-      <text x="{tip_x+3}" y="{py+4}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
-      <text x="{tip_x+3}" y="{py+20}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <rect x="{tip_x-4}" y="{py-20}" width="{tip_w}" height="110" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
+      <text x="{tip_x+3}" y="{py-2}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
+      <text x="{tip_x+3}" y="{py+14}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         VWC: <tspan font-weight="700" fill="#3dd68c">{s['vwc']} %</tspan>
-        &#160;&#160;T: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan>
+        &#160;&#160;GWC: <tspan font-weight="700" fill="#a5f3fc">{s['gwc']} %</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+36}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
-        Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mbar</tspan>
+      <text x="{tip_x+3}" y="{py+30}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+        Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mb</tspan>
         &#160; Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+54}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#4a9aaa">Clic para fijar selección →</text>
+      <text x="{tip_x+3}" y="{py+46}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+        Temp: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan>
+      </text>
+      <text x="{tip_x+3}" y="{py+64}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
+        Pluviómetro: <tspan font-weight="600" fill="#e6edf3">{rain_val} mm</tspan>
+      </text>
+      <text x="{tip_x+3}" y="{py+78}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
+        Batería: <tspan font-weight="600" fill="#e6edf3">{bat_val} V</tspan>
+      </text>
+      <text x="{tip_x+3}" y="{py+96}" font-family="'Segoe UI',sans-serif" font-size="9" fill="#4a9aaa">Clic para fijar selección →</text>
     </g>
   </g>""")
 
@@ -385,14 +429,15 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 # ────────────────────────────────────────────────────────────────────────
 @st.dialog("📊 Histórico e Instrumentación del Sensor", width="large")
 def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, cols_dpt):
-    # 1. Recuperar nombres de columnas de instrumentación correspondientes al índice
+    cfg = CONFIG_PROYECTOS[id_proyecto]
+    densidad = cfg["densidad"]
+    
     cv = cols_vwc[idx]  if idx < len(cols_vwc)  else None
     ct = cols_temp[idx] if idx < len(cols_temp) else None
     cp = cols_pt[idx]   if idx < len(cols_pt)   else None
     cd = cols_dpt[idx]  if idx < len(cols_dpt)  else None
     prof = fmt_depth(cv) if cv else "N/A"
 
-    # 2. CONTROLES DINÁMICOS DENTRO DEL MODAL (Evita usar la barra lateral)
     st.markdown("##### ⚙️ Configuración de Consulta")
     c_fecha, c_var = st.columns(2)
     
@@ -405,7 +450,7 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         )
         
     with c_var:
-        opciones_variables = ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"]
+        opciones_variables = ["Humedad (VWC %)", "Humedad Gravimétrica (GWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"]
         variable_grafico = st.selectbox(
             "📈 Variable para Tendencia Histórica:",
             options=opciones_variables,
@@ -415,7 +460,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
 
     st.markdown("---")
 
-    # 3. FILTRADO TEMPORAL DEL DATO ACTUAL (Métricas del encabezado)
     fecha_limite_kpi = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1)
     df_actual = df_data[df_data['TIMESTAMP'] < fecha_limite_kpi]
     
@@ -426,7 +470,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         ultimo_registro = df_data.iloc[-1] if not df_data.empty else None
         fecha_lectura_str = "Sin datos para esta fecha"
 
-    # 4. DISEÑO DEL ENCABEZADO Y TARJETAS MÉTRICAS
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#1f6feb22,#388bfd11);
          border:1px solid #1f6feb44; border-radius:10px;
@@ -439,9 +482,13 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     </div>
     """, unsafe_allow_html=True)
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m1_g, m2, m3, m4 = st.columns(5)
     if ultimo_registro is not None:
-        with m1: st.metric("💧 Humedad VWC",       f"{safe_val(ultimo_registro, cv)} %"    if cv else "N/D")
+        vwc_val_str = safe_val(ultimo_registro, cv) if cv else "N/D"
+        gwc_val_str = calcular_gwc(vwc_val_str, densidad)
+        
+        with m1: st.metric("💧 Humedad VWC",       f"{vwc_val_str} %"    if cv else "N/D")
+        with m1_g: st.metric("🌾 Humedad GWC",     f"{gwc_val_str} %"    if cv else "N/D")
         with m2: st.metric("🌡️ Temperatura",        f"{safe_val(ultimo_registro, ct, 1)} °C" if ct else "N/D")
         with m3: st.metric("⚡ Presión de Poros",   f"{safe_val(ultimo_registro, cp, 0)} mbar" if cp else "N/D")
         with m4: st.metric("📏 Nivel Hidrostático", f"{safe_val(ultimo_registro, cd, 1)} cm"  if cd else "N/D")
@@ -451,7 +498,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     st.markdown("---")
     st.markdown(f"#### 📊 Gráfica de Tendencia — {variable_grafico} (Ventana de 7 días hacia atrás)")
 
-    # 5. FILTRADO PARA LA SERIE TEMPORAL (Plotly)
     fecha_max = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     fecha_min = pd.to_datetime(fecha_sel) - pd.Timedelta(days=7)
 
@@ -462,17 +508,21 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     
     mapeo = {
         "Humedad (VWC %)":        cv,
+        "Humedad Gravimétrica (GWC %)": cv, # Mismo origen, modificado abajo si aplica
         "Temperatura (°C)":        ct,
         "Presión de Celda (mbar)": cp,
         "Nivel (cm)":              cd,
     }
     col_obj = mapeo.get(variable_grafico)
     
-    # 6. RENDERIZADO DEL GRÁFICO INTERACTIVO
     if col_obj and col_obj in df_f.columns:
         df_g = df_f[['TIMESTAMP', col_obj]].dropna().copy()
         df_g.columns = ['Fecha', variable_grafico]
         df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
+        
+        # Ajuste matemático si se seleccionó GWC
+        if variable_grafico == "Humedad Gravimétrica (GWC %)":
+            df_g[variable_grafico] = df_g[variable_grafico] / densidad
         
         if not df_g.empty:
             fig = px.line(df_g, x='Fecha', y=variable_grafico, template="plotly_dark")
@@ -499,7 +549,7 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
             st.download_button(
                 "⬇️ Exportar serie completa (CSV)",
                 data=csv_bytes,
-                file_name=f"{id_proyecto}_S{idx+1}_{col_obj}.csv",
+                file_name=f"{id_proyecto}_S{idx+1}_{variable_grafico.replace(' ', '_')}.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
@@ -517,10 +567,15 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
 # ─────────────────────────────────────────────
 def construir_interfaz_proyecto(id_proyecto: str):
     cfg = CONFIG_PROYECTOS[id_proyecto]
+    densidad = cfg["densidad"]
+    
     df_data, error = cargar_datos_proyecto(id_proyecto)
     if error or df_data is None:
         st.error(error)
         return
+
+    # Cargar variables ambientales externas
+    rain_val, bat_val = cargar_pluviometro_bateria(id_proyecto)
 
     n         = cfg["max_sensores"]
     cols_vwc  = get_cols(df_data, "VWC",  n)
@@ -528,11 +583,9 @@ def construir_interfaz_proyecto(id_proyecto: str):
     cols_pt   = get_cols(df_data, "PT",   n)
     cols_dpt  = get_cols(df_data, "DPT",  n)
 
-    # El control de fecha superior ahora busca la fecha máxima del set de datos directamente
     if f"fecha_sim_{id_proyecto}" not in st.session_state:
         st.session_state[f"fecha_sim_{id_proyecto}"] = df_data['TIMESTAMP'].max().date() if not df_data.empty else pd.Timestamp.now().date()
     
-    # Selector de fecha integrado de forma elegante arriba en lugar del sidebar
     fechas_disponibles = sorted(df_data['TIMESTAMP'].dt.date.unique(), reverse=True) if not df_data.empty else []
     
     col_header, col_date_pick = st.columns([2.5, 1.5])
@@ -556,13 +609,15 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
     cv_sel = cols_vwc[sel_idx] if sel_idx < len(cols_vwc) else None
     vwc_sel_val = safe_val(ultimo, cv_sel) if cv_sel else "N/D"
+    gwc_sel_val = calcular_gwc(vwc_sel_val, densidad)
+    
     estado_general = estado_sensor(vwc_sel_val)
     pill_class = "vms-status-normal" if estado_general == "NORMAL" else "vms-status-alerta"
     ts_str = ultimo['TIMESTAMP'].strftime('%d-%m-%Y %H:%M')
 
     h_left, h_right = st.columns([3, 1])
     with h_left:
-        st.markdown(f"""<div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">{cfg['nombre_estacion']}</span><span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">ESTACIÓN VMS {cfg['angle_deg']:.0f}°</span><span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">PERFIL DE MONITOREO — {id_proyecto}</span></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:0.75rem; letter-spacing:0.08em; color:#8b949e;">{cfg['nombre_estacion']}</span><span style="font-size:1.6rem; font-weight:800; color:#e6edf3;">ESTACIÓN VMS {cfg['angle_deg']:.0f}°</span><span style="font-size:0.85rem; color:#58a6ff; letter-spacing:0.05em;">PERFIL DE MONITOREO — {id_proyecto} (ρ: {densidad} g/cm³)</span></div>""", unsafe_allow_html=True)
     with h_right:
         st.markdown(f"""<div class="vms-card" style="text-align:center; margin-bottom:0;"><div style="font-size:0.7rem; color:#8b949e; letter-spacing:0.05em;">ESTADO GENERAL</div><span class="vms-status-pill {pill_class}">{estado_general}</span><div style="font-size:0.68rem; color:#8b949e; margin-top:6px;">Última actualización:<br>{ts_str}</div></div>""", unsafe_allow_html=True)
 
@@ -575,8 +630,9 @@ def construir_interfaz_proyecto(id_proyecto: str):
             cv = cols_vwc[i] if i < len(cols_vwc) else None
             prof = fmt_depth(cv) if cv else "N/A"
             vwc  = safe_val(ultimo, cv) if cv else "N/D"
+            gwc  = calcular_gwc(vwc, densidad)
             badge_cls = "vms-badge vms-badge-selected" if i == sel_idx else "vms-badge"
-            filas_html.append(f'<div class="vms-sensor-row"><div style="display:flex; align-items:center;"><span class="{badge_cls}">S{i+1}</span><span class="vms-sensor-meta">Profundidad: <b>{prof}</b><br>VWC: <b>{vwc} %</b></span></div></div>')
+            filas_html.append(f'<div class="vms-sensor-row"><div style="display:flex; align-items:center;"><span class="{badge_cls}">S{i+1}</span><span class="vms-sensor-meta">Profundidad: <b>{prof}</b><br>VWC: <b>{vwc} %</b> | GWC: <b>{gwc} %</b></span></div></div>')
         
         html_card_sensores = f'<div class="vms-card"><h4>📡 SENSORES INSTALADOS</h4>{"".join(filas_html)}</div>'
         st.markdown(html_card_sensores, unsafe_allow_html=True)
@@ -588,16 +644,16 @@ def construir_interfaz_proyecto(id_proyecto: str):
                     st.session_state[key_idx] = i
                     st.rerun()
 
-        st.markdown("""<div class="vms-card"><h4>🔎 SIMBOLOGÍA</h4><div class="vms-legend-row"><span class="vms-legend-icon">💧</span> Humedad volumétrica (VWC)</div><div class="vms-legend-row"><span class="vms-legend-icon">🌡️</span> Temperatura del suelo</div><div class="vms-legend-row"><span class="vms-legend-icon">⚡</span> Presión de poros / celda</div><div class="vms-legend-row"><span class="vms-legend-icon">📏</span> Nivel hidrostático</div><div class="vms-legend-row"><span class="vms-legend-icon">┄</span> Profundidad vertical de referencia</div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="vms-card"><h4>🔎 SIMBOLOGÍA</h4><div class="vms-legend-row"><span class="vms-legend-icon">💧</span> Humedad volumétrica (VWC)</div><div class="vms-legend-row"><span class="vms-legend-icon">🌾</span> Humedad gravimétrica (GWC)</div><div class="vms-legend-row"><span class="vms-legend-icon">🌡️</span> Temperatura del suelo</div><div class="vms-legend-row"><span class="vms-legend-icon">⚡</span> Presión de poros / celda</div><div class="vms-legend-row"><span class="vms-legend-icon">📏</span> Nivel hidrostático</div><div class="vms-legend-row"><span class="vms-legend-icon">┄</span> Profundidad vertical de referencia</div></div>""", unsafe_allow_html=True)
 
     with col_centro:
-        st.caption("Pasa el cursor sobre un sensor para ver sus datos rápidos · Usa los botones S1-S8 para fijar la telemetría")
+        st.caption("Pasa el cursor sobre un sensor para ver sus datos rápidos (incluye GWC, Lluvia y Batería)")
         html_code = render_soil_profile(
             id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
-            ultimo, selected_idx=sel_idx,
+            ultimo, rain_val, bat_val, selected_idx=sel_idx,
         )
         st.components.v1.html(html_code, height=660, scrolling=False)
-        st.markdown("""<div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo del eje del pozo (inclinación indicada).</div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo del eje del pozo (inclinación adecuada).</div>""", unsafe_allow_html=True)
 
     with col_der:
         cv = cols_vwc[sel_idx]  if sel_idx < len(cols_vwc)  else None
@@ -606,7 +662,17 @@ def construir_interfaz_proyecto(id_proyecto: str):
         cd = cols_dpt[sel_idx]  if sel_idx < len(cols_dpt)  else None
         prof = fmt_depth(cv) if cv else "N/A"
 
-        st.markdown(f"""<div class="vms-card"><h4>ℹ️ INFORMACIÓN DEL SENSOR</h4><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="vms-badge vms-badge-selected">S{sel_idx+1}</span><span style="font-weight:700; color:#e6edf3;">Sensor S{sel_idx+1}</span></div><div class="vms-detail-row"><span>Profundidad</span><span>{prof}</span></div><div class="vms-detail-row"><span>Humedad (VWC)</span><span>{safe_val(ultimo, cv) if cv else 'N/D'} %</span></div><div class="vms-detail-row"><span>Temperatura</span><span>{safe_val(ultimo, ct, 1) if ct else 'N/D'} °C</span></div><div class="vms-detail-row"><span>Presión de poros</span><span>{safe_val(ultimo, cp, 0) if cp else 'N/D'} mbar</span></div><div class="vms-detail-row"><span>Nivel hidrostático</span><span>{safe_val(ultimo, cd, 1) if cd else 'N/D'} cm</span></div><div class="vms-detail-row"><span>Última lectura</span><span>{ts_str}</span></div><div class="vms-detail-row"><span>Estado</span><span class="vms-status-pill {pill_class}" style="padding:1px 8px;">{estado_general}</span></div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class="vms-card"><h4>ℹ️ INFORMACIÓN DEL SENSOR</h4>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span class="vms-badge vms-badge-selected">S{sel_idx+1}</span><span style="font-weight:700; color:#e6edf3;">Sensor S{sel_idx+1}</span></div>
+        <div class="vms-detail-row"><span>Profundidad</span><span>{prof}</span></div>
+        <div class="vms-detail-row"><span>Humedad (VWC)</span><span>{vwc_sel_val} %</span></div>
+        <div class="vms-detail-row"><span>Humedad (GWC)</span><span style="color:#a5f3fc;">{gwc_sel_val} %</span></div>
+        <div class="vms-detail-row"><span>Temperatura</span><span>{safe_val(ultimo, ct, 1) if ct else 'N/D'} °C</span></div>
+        <div class="vms-detail-row"><span>Presión de poros</span><span>{safe_val(ultimo, cp, 0) if cp else 'N/D'} mbar</span></div>
+        <div class="vms-detail-row"><span>Nivel hidrostático</span><span>{safe_val(ultimo, cd, 1) if cd else 'N/D'} cm</span></div>
+        <div class="vms-detail-row" style="border-top:1px solid #30363d; padding-top:6px; margin-top:4px;"><span>🌧️ Pluviómetro</span><span>{rain_val} mm</span></div>
+        <div class="vms-detail-row"><span>🔋 Estado Batería</span><span>{bat_val} V</span></div>
+        <div class="vms-detail-row"><span>Estado</span><span class="vms-status-pill {pill_class}" style="padding:1px 8px;">{estado_general}</span></div></div>""", unsafe_allow_html=True)
 
         b1, b2 = st.columns(2)
         with b1:
@@ -635,10 +701,13 @@ def construir_interfaz_proyecto(id_proyecto: str):
     with st.expander("📊 Ver tabla completa de sensores"):
         resumen = []
         for i in range(n):
+            cv_i = cols_vwc[i] if i < len(cols_vwc) else None
+            vwc_i = safe_val(ultimo, cv_i) if cv_i else "N/D"
             resumen.append({
                 "Sensor":         f"S{i+1}",
-                "Profundidad":    fmt_depth(cols_vwc[i]) if i < len(cols_vwc) else "N/A",
-                "VWC (%)":        safe_val(ultimo, cols_vwc[i])  if i < len(cols_vwc)  else "N/D",
+                "Profundidad":    fmt_depth(cv_i) if cv_i else "N/A",
+                "VWC (%)":        vwc_i,
+                "GWC (%)":        calcular_gwc(vwc_i, densidad),
                 "Temp (°C)":      safe_val(ultimo, cols_temp[i], 1) if i < len(cols_temp) else "N/D",
                 "Presión (mbar)": safe_val(ultimo, cols_pt[i], 0)  if i < len(cols_pt)   else "N/D",
                 "Nivel (cm)":      safe_val(ultimo, cols_dpt[i], 1)  if i < len(cols_dpt)  else "N/D",
