@@ -221,14 +221,14 @@ def estado_sensor(vwc_str: str) -> str:
     return "NORMAL"
 
 # =============================================================================
-# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION ESCALA REAL CORREGIDA)
+# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (FIJADO A ESCALA REAL 6 METROS)
 # =============================================================================
 SVG_W       = 680
-SVG_H       = 950        # Altura del lienzo ampliada para dar aire abajo a todos los sensores
-SURFACE_Y   = 100        # Cota superior del terreno
-MAX_DEPTH_Y = 860        # Cota máxima visual exacta donde se posicionará el SENSOR MÁS PROFUNDO
+SVG_H       = 950        # Altura física del lienzo para que quepa todo el gráfico estirado
+SURFACE_Y   = 100        # Dónde empieza el suelo
+MAX_DEPTH_Y = 880        # El fondo del pozo visual en píxeles
 CABLE_X0    = 340
-REF_LINE_X  = 70
+REF_LINE_X  = 70 
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, rain_val, bat_val, selected_idx=0):
@@ -237,23 +237,15 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     n_sens = cfg["max_sensores"]
     densidad = cfg["densidad"]
     
-    # 1. Detectar dinámicamente la profundidad real en cm más grande declarada en el CSV
-    max_cm_detectado = 10.0
-    for cv in cols_vwc:
-        dc = depth_cm(cv)
-        if dc > max_cm_detectado:
-            max_cm_detectado = dc
-            
-    # Resguardo por si el CSV viene vacío o corrupto
-    if max_cm_detectado <= 10.0:
-        max_cm_detectado = 600.0
+    # 💡 FORZAMOS LA ESCALA: El gráfico siempre representará una profundidad máxima de 600 cm (6 metros)
+    # Esto evita que si el sensor máximo dice "70", el gráfico se rompa o se hiper-amplifique.
+    max_cm_fijo = 600.0 
 
-    # 2. Las capas del suelo se distribuyen proporcionalmente en el espacio útil total
+    # Las capas del suelo se distribuyen en el espacio total útil
     layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
 
-    # 3. FACTOR DE ESCALA DIRECTO POR CENTÍMETRO REAL (Evita distorsiones de interpolación)
-    # Mapea desde SURFACE_Y (100px) hasta MAX_DEPTH_Y (860px) de forma exacta
-    px_per_cm = (MAX_DEPTH_Y - SURFACE_Y) / max_cm_detectado
+    # FACTOR DE ESCALA ESTABLE: mapea 600 cm reales en los 780 píxeles disponibles
+    px_per_cm = (MAX_DEPTH_Y - SURFACE_Y) / max_cm_fijo
     
     sensors = []
     for i in range(n_sens):
@@ -262,17 +254,25 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
         
-        # Obtener profundidad exacta del sensor desde el nombre de su columna en cm
-        dc = depth_cm(cv) if cv else (i + 1) * (max_cm_detectado / n_sens)
+        # Si la función depth_cm nos da un valor muy chico (ej. 10, 20, 30 cm) lo usamos, 
+        # si no hay columna, los espacia de forma secuencial.
+        dc = depth_cm(cv) if cv else (i + 1) * 40.0
         
-        # Posicionamiento vertical exacto usando la escala directa por centímetro
-        dy = dc * px_per_cm
+        # 💡 TRUCO DE CONTROL: Si los sensores reales están muy juntos en los primeros centímetros, 
+        # multiplicamos su espaciado visual dinámicamente para que se separen bien a lo largo del cable.
+        # Si el pozo es corto en cm reales, simulamos un espaciado visual de 80cm por sensor para que luzca bien.
+        if dc < 150.0:  
+            distancia_visual_cm = (i + 1) * 70.0
+        else:
+            distancia_visual_cm = dc
+
+        dy = distancia_visual_cm * px_per_cm
         dx = dy * math.tan(math.radians(angle_visual))
         
         sx = round(CABLE_X0 + dx, 1)
         sy = round(SURFACE_Y + dy, 1)
         
-        # Control estricto de desborde visual por seguridad
+        # Evitar de forma estricta que cualquier sensor toque o pase el límite inferior físico
         if sy > MAX_DEPTH_Y:
             sy = MAX_DEPTH_Y
 
@@ -295,7 +295,6 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     for idx, (color, _) in enumerate(layers):
         y_top = SURFACE_Y + idx * layer_h
         h     = layer_h
-        # La última capa se extiende hasta cubrir el fondo del lienzo SVG
         if idx == len(layers) - 1:
             h = SVG_H - y_top
         layer_svg.append(
@@ -368,7 +367,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     ruler_svg   = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
-        current_m = (i * (max_cm_detectado / 100.0)) / (ruler_marks - 1)
+        current_m = (i * (max_cm_fijo / 100.0)) / (ruler_marks - 1)
         ruler_svg.append(
             f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
             f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
@@ -431,11 +430,11 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
   }});
 }});
 (function resize() {{
-  const h = document.querySelector('svg').getBoundingClientRect().height;
-  if (h > 80) window.parent.parent.postMessage({{
+  const h = document.body.scrollHeight || document.documentElement.scrollHeight;
+  if (h > 80) window.parent.postMessage({{
     isstreamlitMessage: true,
     type: "streamlit:setFrameHeight",
-    height: Math.ceil(h) + 10
+    height: Math.ceil(h) + 15
   }}, "*");
   setTimeout(resize, 500);
 }})();
