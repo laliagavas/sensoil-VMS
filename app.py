@@ -221,12 +221,12 @@ def estado_sensor(vwc_str: str) -> str:
     return "NORMAL"
 
 # =============================================================================
-# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION OPTIMIZADA)
+# 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION DEFINITIVA)
 # =============================================================================
 SVG_W       = 680
-SVG_H       = 850        # 💡 Aumentado de 660 a 850 para dar más espacio vertical
-SURFACE_Y   = 100
-MAX_DEPTH_Y = 780        # 💡 Aumentado de 608 a 780 para que la regla y el fondo bajen por completo
+SVG_H       = 850        # Altura total fija del lienzo
+SURFACE_Y   = 100        # Punto donde empieza la tierra
+MAX_DEPTH_Y = 800        # Límite máximo exacto inferior del lienzo para el último sensor
 CABLE_X0    = 340
 REF_LINE_X  = 70 
 
@@ -237,31 +237,40 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     n_sens = cfg["max_sensores"]
     densidad = cfg["densidad"]
     
-    real_max_depth_cm = 600.0
+    # 1. Encontrar la profundidad máxima real exacta en centímetros de los sensores del archivo
+    real_max_depth_cm = 100.0
     for cv in cols_vwc:
         dc = depth_cm(cv)
         if dc > real_max_depth_cm:
             real_max_depth_cm = dc
-    real_max_depth_cm += 200.0 
+            
+    # Margen extra de seguridad (un 10% más abajo del último sensor para que no toque el borde)
+    real_max_depth_cm = real_max_depth_cm * 1.10
     real_max_depth_m = real_max_depth_cm / 100.0
 
-    # 💡 Ajustado el cálculo para que las capas de suelo también se estiren hacia abajo
-    layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y - 2) // max(len(layers), 1))
+    # 2. Las capas del suelo ocuparán exactamente hasta el fondo útil
+    layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
 
-    sensors = []
-    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / (real_max_depth_cm / 100.0)
+    # 3. Factor de escala: Mapea los metros reales exactos dentro del espacio visual útil (de 100px a 800px)
+    px_per_meter = (MAX_DEPTH_Y - SURFACE_Y) / real_max_depth_m
     
+    sensors = []
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
         ct = cols_temp[i] if i < len(cols_temp) else None
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
-        dc = depth_cm(cv) if cv else (i + 1) * 80.0
+        
+        # Si no lee la columna, estimamos una profundidad secuencial lógica
+        dc = depth_cm(cv) if cv else (i + 1) * (real_max_depth_cm / n_sens)
         
         depth_m = dc / 100.0
         dy = depth_m * px_per_meter
         dx = dy * math.tan(math.radians(angle_visual))
-        sx, sy = round(CABLE_X0 + dx, 1), round(SURFACE_Y + dy, 1)
+        
+        # Forzar a que la coordenada 'sy' nunca supere el fondo físico restándole un margen para el círculo
+        sx = round(CABLE_X0 + dx, 1)
+        sy = round(min(SURFACE_Y + dy, MAX_DEPTH_Y - 15), 1)
         
         vwc_v = safe_val(ultimo_reg, cv, 2) if cv else "N/D"
         gwc_v = calcular_gwc(vwc_v, densidad)
@@ -280,18 +289,19 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
     layer_svg = []
     for idx, (color, _) in enumerate(layers):
-        y_top = SURFACE_Y + 2 + idx * layer_h
-        h     = min(layer_h, SVG_H - y_top - 4)
-        if h <= 0:
-            break
+        y_top = SURFACE_Y + idx * layer_h
+        h     = layer_h
+        # Asegurar que la última capa cubra el fondo por completo
+        if idx == len(layers) - 1:
+            h = SVG_H - y_top
         layer_svg.append(
             f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
             f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.25"/>'
         )
 
     last      = sensors[-1]
-    cable_ex  = last["x"] + 15 * math.tan(math.radians(angle_visual))
-    cable_ey  = min(last["y"] + 15, SVG_H - 8)
+    cable_ex  = last["x"]
+    cable_ey  = last["y"]
 
     pins_svg = []
     for s in sensors:
@@ -303,9 +313,10 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 22
             
+        # Ajuste dinámico de los globos de información emergentes (tooltips) para los sensores de abajo
         tip_y      = py - 25
-        if tip_y + tip_h > SVG_H - 12:
-            tip_y = SVG_H - tip_h - 12
+        if tip_y + tip_h > SVG_H - 15:
+            tip_y = SVG_H - tip_h - 15
 
         is_sel     = (s["idx"] == selected_idx)
         ring_color = "#ffe066" if is_sel else "#7dc3ff"
@@ -418,7 +429,7 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 }});
 (function resize() {{
   const h = document.querySelector('svg').getBoundingClientRect().height;
-  if (h > 80) window.parent.postMessage({{
+  if (h > 80) window.parent.parent.postMessage({{
     isstreamlitMessage: true,
     type: "streamlit:setFrameHeight",
     height: Math.ceil(h) + 10
