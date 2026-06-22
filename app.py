@@ -379,19 +379,62 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 </script>
 </body></html>"""
 
-# ─────────────────────────────────────────────
-# 5. MODAL — HISTÓRICO COMPLETO DE UN SENSOR (FIX CON PLOTLY)
-# ─────────────────────────────────────────────
-@st.dialog("📊 Histórico de Sensor", width="large")
-def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
-                    cols_vwc, cols_temp, cols_pt, cols_dpt,
-                    fecha_sel, variable_grafico):
+# ────────────────────────────────────────────────────────────────────────
+# 5. MODAL OPTIMIZADO — HISTÓRICO CON SELECTORES INTEGRADOS Y PLOTLY
+# ────────────────────────────────────────────────────────────────────────
+@st.dialog("📊 Histórico e Instrumentación del Sensor", width="large")
+def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, cols_dpt):
+    """
+    Se eliminaron los argumentos estáticos de fecha y variable.
+    Ahora se gestionan dinámicamente mediante el estado de sesión dentro del modal.
+    """
+    
+    # 1. Recuperar nombres de columnas de instrumentación correspondientes al índice
     cv = cols_vwc[idx]  if idx < len(cols_vwc)  else None
     ct = cols_temp[idx] if idx < len(cols_temp) else None
     cp = cols_pt[idx]   if idx < len(cols_pt)   else None
     cd = cols_dpt[idx]  if idx < len(cols_dpt)  else None
     prof = fmt_depth(cv) if cv else "N/A"
 
+    # 2. CONTROLES DINÁMICOS DENTRO DEL MODAL (Evita usar la barra lateral)
+    st.markdown("##### ⚙️ Configuración de Consulta")
+    c_fecha, c_var = st.columns(2)
+    
+    with c_fecha:
+        # Buscamos la fecha máxima disponible en el DataFrame para usarla por defecto
+        fecha_max_global = df_data['TIMESTAMP'].max().date() if 'TIMESTAMP' in df_data.columns else pd.Timestamp.now().date()
+        fecha_sel = st.date_input(
+            "📅 Selecciona fecha de simulación:",
+            value=fecha_max_global,
+            key=f"modal_date_{id_proyecto}_{idx}"
+        )
+        
+    with c_var:
+        # Selector de la variable de interés para la serie temporal
+        opciones_variables = ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"]
+        variable_grafico = st.selectbox(
+            "📈 Variable para Tendencia Histórica:",
+            options=opciones_variables,
+            index=0,
+            key=f"modal_var_{id_proyecto}_{idx}"
+        )
+
+    st.markdown("---")
+
+    # 3. FILTRADO TEMPORAL DEL DATO ACTUAL (Métricas del encabezado)
+    # Buscamos el registro más cercano a la fecha seleccionada para mostrar los Kpi's congelados en ese día
+    fecha_limite_kpi = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1)
+    df_actual = df_data[df_data['TIMESTAMP'] < fecha_limite_kpi]
+    
+    if not df_actual.empty:
+        ultimo_registro = df_actual.iloc[-1]
+        fecha_lectura_str = ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')
+    else:
+        # Fallback en caso de que no haya registros previos a la fecha elegida
+        ultimo_registro = df_data.iloc[-1] if not df_data.empty else None
+        fecha_lectura_str = "Sin datos para esta fecha"
+
+    # 4. DISEÑO DEL ENCABEZADO Y TARJETAS MÉTRICAS
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#1f6feb22,#388bfd11);
          border:1px solid #1f6feb44; border-radius:10px;
@@ -399,23 +442,25 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
       <h3 style="margin:0;color:#58a6ff;">📡 Sensor S{idx+1} — Profundidad {prof}</h3>
       <p style="margin:0;color:#8b949e;font-size:0.85rem;">
         Estación: <b style="color:#e6edf3">{id_proyecto}</b> &nbsp;|&nbsp;
-        Última lectura: <b style="color:#e6edf3">
-          {ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')}
-        </b>
+        Lectura al corte de simulación: <b style="color:#e6edf3">{fecha_lectura_str}</b>
       </p>
     </div>
     """, unsafe_allow_html=True)
 
+    # Renderizado seguro de métricas
     m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric("💧 Humedad VWC",       f"{safe_val(ultimo_registro, cv)} %"    if cv else "N/D")
-    with m2: st.metric("🌡️ Temperatura",        f"{safe_val(ultimo_registro, ct, 1)} °C" if ct else "N/D")
-    with m3: st.metric("⚡ Presión de Poros",   f"{safe_val(ultimo_registro, cp, 0)} mbar" if cp else "N/D")
-    with m4: st.metric("📏 Nivel Hidrostático", f"{safe_val(ultimo_registro, cd, 1)} cm"  if cd else "N/D")
+    if ultimo_registro is not None:
+        with m1: st.metric("💧 Humedad VWC",       f"{safe_val(ultimo_registro, cv)} %"    if cv else "N/D")
+        with m2: st.metric("🌡️ Temperatura",        f"{safe_val(ultimo_registro, ct, 1)} °C" if ct else "N/D")
+        with m3: st.metric("⚡ Presión de Poros",   f"{safe_val(ultimo_registro, cp, 0)} mbar" if cp else "N/D")
+        with m4: st.metric("📏 Nivel Hidrostático", f"{safe_val(ultimo_registro, cd, 1)} cm"  if cd else "N/D")
+    else:
+        st.warning("No se encontraron registros de telemetría.")
 
     st.markdown("---")
-    st.markdown(f"#### 📈 Historial — {variable_grafico} (Últimos 7 días)")
+    st.markdown(f"#### 📊 Gráfica de Tendencia — {variable_grafico} (Ventana de 7 días hacia atrás)")
 
-    # Rango de tiempo inclusivo (últimos 7 días)
+    # 5. FILTRADO PARA LA SERIE TEMPORAL (Plotly)
     fecha_max = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     fecha_min = pd.to_datetime(fecha_sel) - pd.Timedelta(days=7)
 
@@ -432,25 +477,24 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
     }
     col_obj = mapeo.get(variable_grafico)
     
+    # 6. RENDERIZADO DEL GRÁFICO INTERACTIVO
     if col_obj and col_obj in df_f.columns:
         df_g = df_f[['TIMESTAMP', col_obj]].dropna().copy()
         df_g.columns = ['Fecha', variable_grafico]
         df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
         
         if not df_g.empty:
-            # ── CONSTRUCCIÓN DEL GRÁFICO CON PLOTLY ──
+            # Construcción adaptativa con Plotly Express
             fig = px.line(
                 df_g, 
                 x='Fecha', 
                 y=variable_grafico,
-                title=None,
-                template="plotly_dark"  # Encaja con tu modo oscuro global
+                template="plotly_dark"
             )
             
-            # Ajustes visuales para integrarse al look del Dashboard
-            fig.update_traces(line=dict(color='#58a6ff', width=2.5))
+            fig.update_traces(line=dict(color='#388bfd', width=2.5))
             fig.update_layout(
-                margin=dict(l=40, r=20, t=20, b=40),
+                margin=dict(l=50, r=20, t=20, b=40),
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 xaxis=dict(
@@ -463,16 +507,17 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
                     showgrid=True, 
                     gridcolor='#21262d', 
                     title=None,
-                    # Forzamos un margen extra si los valores son constantes para evitar el colapso visual
                     rangemode='nonnegative' if "Humedad" in variable_grafico else 'normal'
                 ),
                 hovermode="x unified"
             )
             
-            # Renderizar gráfico de Plotly en Streamlit
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-            # Botón de exportación basado en dataframe indexado
+            # Tabla estructurada de datos históricos justo debajo (como tenías antes)
+            st.dataframe(df_g, use_container_width=True, hide_index=True)
+
+            # Botón de exportación dinámico
             df_export = df_g.set_index('Fecha')
             csv_bytes = df_export.to_csv().encode("utf-8")
             st.download_button(
@@ -483,13 +528,12 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
                 use_container_width=True,
             )
         else:
-            st.warning("⚠️ No se encontraron puntos de datos válidos para graficar en el rango seleccionado.")
+            st.warning("⚠️ No se encontraron puntos de datos válidos en el rango de 7 días seleccionado.")
     else:
-        st.error("⚠️ La variable seleccionada no coincide con ninguna columna válida.")
+        st.error("⚠️ La variable seleccionada no está instrumentada en este sensor.")
 
     if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
         st.rerun()
-
 # ─────────────────────────────────────────────
 # 6. SIDEBAR
 # ─────────────────────────────────────────────
