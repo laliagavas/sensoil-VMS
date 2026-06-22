@@ -4,6 +4,7 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 # ─────────────────────────────────────────────
 # 1. CONFIGURACIÓN GLOBAL
@@ -51,13 +52,15 @@ st.markdown("""
     }
     .vms-sensor-row {
         display:flex; align-items:center; justify-content:space-between;
-        padding: 6px 0; border-bottom: 1px dashed #21262d;
+        padding: 6px 0;
+        border-bottom: 1px dashed #21262d;
     }
     .vms-sensor-row:last-child { border-bottom: none; }
     .vms-badge {
         display:inline-flex; align-items:center; justify-content:center;
         width:26px; height:26px; border-radius:50%;
-        background:#1f6feb; color:white; font-weight:700; font-size:0.75rem;
+        background:#1f6feb;
+        color:white; font-weight:700; font-size:0.75rem;
         margin-right:8px; flex-shrink:0;
     }
     .vms-badge-selected { background:#3dd68c !important; color:#0d1117 !important; }
@@ -65,7 +68,8 @@ st.markdown("""
     .vms-sensor-meta b { color:#e6edf3; }
     .vms-detail-row {
         display:flex; justify-content:space-between;
-        font-size:0.8rem; padding:5px 0; border-bottom: 1px dashed #21262d;
+        font-size:0.8rem; padding:5px 0;
+        border-bottom: 1px dashed #21262d;
     }
     .vms-detail-row:last-child { border-bottom:none; }
     .vms-detail-row span:first-child { color:#8b949e; }
@@ -148,7 +152,6 @@ def cargar_pluviometro_bateria(id_proyecto: str):
     rain_val = "N/D"
     bat_val = "N/D"
     
-    # Cargar lluvia desde columna 4 (index 3)
     if os.path.exists(cfg["csv_rain"]):
         try:
             df_rain = pd.read_csv(cfg["csv_rain"], sep=",")
@@ -158,7 +161,6 @@ def cargar_pluviometro_bateria(id_proyecto: str):
         except Exception:
             pass
 
-    # Cargar bateria desde columna 3 (index 2)
     if os.path.exists(cfg["csv_monitor"]):
         try:
             df_bat = pd.read_csv(cfg["csv_monitor"], sep=",")
@@ -170,14 +172,12 @@ def cargar_pluviometro_bateria(id_proyecto: str):
             
     return rain_val, bat_val
 
-
 def get_cols(df, prefix, n):
     cols = sorted(
         [c for c in df.columns if c.startswith(f"{prefix}_")],
         key=lambda x: int(x.split('_')[1]) if len(x.split('_')) > 1 and x.split('_')[1].isdigit() else 0
     )
     return cols[:n]
-
 
 def fmt_depth(col_name: str) -> str:
     try:
@@ -189,7 +189,6 @@ def fmt_depth(col_name: str) -> str:
         pass
     return "N/A"
 
-
 def depth_cm(col_name: str) -> float:
     try:
         parts = col_name.split('_')
@@ -199,13 +198,11 @@ def depth_cm(col_name: str) -> float:
         pass
     return 0.0
 
-
 def safe_val(serie, col, decimals=2):
     try:
         return f"{float(serie[col]):.{decimals}f}"
     except Exception:
         return "N/D"
-
 
 def calcular_gwc(vwc_str: str, densidad: float) -> str:
     try:
@@ -213,7 +210,6 @@ def calcular_gwc(vwc_str: str, densidad: float) -> str:
         return f"{(v / densidad):.2f}"
     except Exception:
         return "N/D"
-
 
 def estado_sensor(vwc_str: str) -> str:
     try:
@@ -223,7 +219,6 @@ def estado_sensor(vwc_str: str) -> str:
     except Exception:
         pass
     return "NORMAL"
-
 
 # =============================================================================
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (VERSION OPTIMIZADA)
@@ -300,10 +295,19 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     pins_svg = []
     for s in sensors:
         px, py     = s["x"], s["y"]
-        tip_x      = px + 14
         tip_w      = 175
+        tip_h      = 116
+        
+        # FIX 1: Mayor separación en X (+22) para que el Tooltip no tape el punto del sensor
+        tip_x      = px + 22
         if tip_x + tip_w > SVG_W - 6:
-            tip_x = px - tip_w - 10
+            tip_x = px - tip_w - 22
+            
+        # FIX 2: Cálculo dinámico de Y para evitar que se corte abajo en S8
+        tip_y      = py - 25
+        if tip_y + tip_h > SVG_H - 12:
+            tip_y = SVG_H - tip_h - 12 # Lo empuja hacia arriba si choca con el fondo
+
         is_sel     = (s["idx"] == selected_idx)
         ring_color = "#ffe066" if is_sel else "#7dc3ff"
         delay      = f"{s['idx'] * 0.25:.2f}s"
@@ -313,29 +317,30 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     <circle class="vms-halo" cx="{px}" cy="{py}" r="13" fill="#1f7fe8" opacity="0.15" style="animation-delay:{delay}"/>
     <circle cx="{px}" cy="{py}" r="8" fill="#1255b0" stroke="{ring_color}" stroke-width="2.2"/>
     <circle cx="{px}" cy="{py}" r="3.5" fill="{ring_color}"/>
+    
     <rect x="{px+11}" y="{py-11}" width="28" height="15" rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
     <text x="{px+25}" y="{py-3}" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="{ring_color}">{s['label']}</text>
     <g class="vms-tip" opacity="0" pointer-events="none">
-      <rect x="{tip_x-4}" y="{py-20}" width="{tip_w}" height="110" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
-      <text x="{tip_x+3}" y="{py-2}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
-      <text x="{tip_x+3}" y="{py+14}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <rect x="{tip_x-4}" y="{tip_y}" width="{tip_w}" height="{tip_h}" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
+      <text x="{tip_x+3}" y="{tip_y+18}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
+      <text x="{tip_x+3}" y="{tip_y+34}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         VWC: <tspan font-weight="700" fill="#3dd68c">{s['vwc']} %</tspan>
         &#160;&#160;GWC: <tspan font-weight="700" fill="#a5f3fc">{s['gwc']} %</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+30}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <text x="{tip_x+3}" y="{tip_y+50}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mb</tspan>
-        &#160; Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan>
+        &#160;Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+46}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
+      <text x="{tip_x+3}" y="{tip_y+66}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
         Temp: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+64}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
+      <text x="{tip_x+3}" y="{tip_y+84}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
         Pluviómetro: <tspan font-weight="600" fill="#e6edf3">{rain_val} mm</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+78}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
+      <text x="{tip_x+3}" y="{tip_y+98}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
         Batería: <tspan font-weight="600" fill="#e6edf3">{bat_val} V</tspan>
       </text>
-      <text x="{tip_x+3}" y="{py+96}" font-family="'Segoe UI',sans-serif" font-size="9" fill="#4a9aaa">Clic para fijar selección →</text>
+      <text x="{tip_x+3}" y="{tip_y+111}" font-family="'Segoe UI',sans-serif" font-size="9" fill="#4a9aaa">Clic para fijar selección →</text>
     </g>
   </g>""")
 
@@ -473,7 +478,8 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#1f6feb22,#388bfd11);
          border:1px solid #1f6feb44; border-radius:10px;
-         padding:14px 18px; margin-bottom:12px;">
+         padding:14px 18px;
+         margin-bottom:12px;">
       <h3 style="margin:0;color:#58a6ff;">📡 Sensor S{idx+1} — Profundidad {prof}</h3>
       <p style="margin:0;color:#8b949e;font-size:0.85rem;">
         Estación: <b style="color:#e6edf3">{id_proyecto}</b> &nbsp;|&nbsp;
@@ -508,7 +514,7 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     
     mapeo = {
         "Humedad (VWC %)":        cv,
-        "Humedad Gravimétrica (GWC %)": cv, # Mismo origen, modificado abajo si aplica
+        "Humedad Gravimétrica (GWC %)": cv, 
         "Temperatura (°C)":        ct,
         "Presión de Celda (mbar)": cp,
         "Nivel (cm)":              cd,
@@ -520,9 +526,8 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         df_g.columns = ['Fecha', variable_grafico]
         df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
         
-        # Ajuste matemático si se seleccionó GWC
         if variable_grafico == "Humedad Gravimétrica (GWC %)":
-            df_g[variable_grafico] = df_g[variable_grafico] / densidad
+            df_g[variable_grafico] = df_g[variable_grafico].astype(float) / densidad
         
         if not df_g.empty:
             fig = px.line(df_g, x='Fecha', y=variable_grafico, template="plotly_dark")
@@ -561,7 +566,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
         st.rerun()
 
-
 # ─────────────────────────────────────────────
 # 6. PANEL POR PROYECTO
 # ─────────────────────────────────────────────
@@ -574,7 +578,6 @@ def construir_interfaz_proyecto(id_proyecto: str):
         st.error(error)
         return
 
-    # Cargar variables ambientales externas
     rain_val, bat_val = cargar_pluviometro_bateria(id_proyecto)
 
     n         = cfg["max_sensores"]
@@ -714,16 +717,168 @@ def construir_interfaz_proyecto(id_proyecto: str):
             })
         st.dataframe(pd.DataFrame(resumen), use_container_width=True, hide_index=True)
 
+
 # ─────────────────────────────────────────────
-# 7. PESTAÑAS PRINCIPALES
+# 7. SISTEMA DE PESTAÑAS GLOBAL (INTEGRADO)
 # ─────────────────────────────────────────────
-tab_drf, tab_romeral = st.tabs([
-    "📍 Estación DRF",
-    "📍 Estación El Romeral",
+tab_monitoreo, tab_avanzado = st.tabs([
+    "📍 Monitoreo en Tiempo Real",
+    "📊 Análisis Avanzado"
 ])
 
-with tab_drf:
-    construir_interfaz_proyecto("DRF")
+with tab_monitoreo:
+    tab_drf, tab_romeral = st.tabs([
+        "📍 Estación DRF",
+        "📍 Estación El Romeral",
+    ])
 
-with tab_romeral:
-    construir_interfaz_proyecto("ROMERAL")
+    with tab_drf:
+        construir_interfaz_proyecto("DRF")
+
+    with tab_romeral:
+        construir_interfaz_proyecto("ROMERAL")
+
+
+with tab_avanzado:
+    st.subheader("📊 Panel de Análisis Avanzado e Histórico")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente (Estilo Grafana).")
+    
+    # Controles superiores
+    col_proj, col_time, col_var = st.columns(3)
+    
+    with col_proj:
+        proyecto_sel = st.selectbox("Estación de Monitoreo", ["ROMERAL", "DRF"], key="adv_proj_sel")
+        cfg_adv = CONFIG_PROYECTOS[proyecto_sel]
+        densidad_adv = cfg_adv["densidad"]
+        
+    with col_time:
+        rango_tiempo = st.selectbox(
+            "Rango Temporal (Eje X)",
+            ["Últimos 7 días", "Últimos 30 días", "Últimos 90 días", "Histórico Completo"],
+            index=1,
+            key="adv_time_sel"
+        )
+        
+    with col_var:
+        variable_analisis = st.selectbox(
+            "Métrica a graficar",
+            ["Humedad VWC (%)", "Humedad Gravimétrica GWC (%)", "Presión de Poros (mbar)", "Temperatura (°C)"],
+            key="adv_var_sel"
+        )
+
+    # Cargar datos para el análisis
+    df_adv_raw, err_adv = cargar_datos_proyecto(proyecto_sel)
+    
+    if err_adv or df_adv_raw is None:
+        st.error(f"No se pudieron cargar los datos históricos para {proyecto_sel}.")
+    else:
+        # Extraer nombres de columnas mapeadas
+        n_adv = cfg_adv["max_sensores"]
+        cols_vwc_adv  = get_cols(df_adv_raw, "VWC",  n_adv)
+        cols_temp_adv = get_cols(df_adv_raw, "TEMP", n_adv)
+        cols_pt_adv   = get_cols(df_adv_raw, "PT",   n_adv)
+        cols_dpt_adv  = get_cols(df_adv_raw, "DPT",  n_adv)
+        
+        # Filtro de Sensores Multiselect dinámico
+        sensores_disponibles = [f"S{i+1}" for i in range(n_adv)]
+        sensores_seleccionados = st.multiselect(
+            "Seleccionar Sensores en Pantalla",
+            options=sensores_disponibles,
+            default=sensores_disponibles,
+            key="adv_sensors_multiselect"
+        )
+        
+        # Filtrado temporal del dataframe
+        hoy = df_adv_raw['TIMESTAMP'].max() if not df_adv_raw.empty else pd.Timestamp.now()
+        if rango_tiempo == "Últimos 7 días":
+            fecha_limite = hoy - pd.Timedelta(days=7)
+        elif rango_tiempo == "Últimos 30 días":
+            fecha_limite = hoy - pd.Timedelta(days=30)
+        elif rango_tiempo == "Últimos 90 días":
+            fecha_limite = hoy - pd.Timedelta(days=90)
+        else:
+            fecha_limite = df_adv_raw['TIMESTAMP'].min()
+            
+        df_adv_filtrado = df_adv_raw[df_adv_raw['TIMESTAMP'] >= fecha_limite].sort_values(by='TIMESTAMP').copy()
+        
+        # Construcción del gráfico unificado
+        fig_adv = go.Figure()
+        
+        # Mapeo de variables seleccionadas
+        mapeo_prefijo = {
+            "Humedad VWC (%)": (cols_vwc_adv, "VWC"),
+            "Humedad Gravimétrica GWC (%)": (cols_vwc_adv, "GWC"),
+            "Presión de Poros (mbar)": (cols_pt_adv, "Presión"),
+            "Temperatura (°C)": (cols_temp_adv, "Temp")
+        }
+        
+        lista_columnas, label_y = mapeo_prefijo[variable_analisis]
+        
+        for idx_s, s_name in enumerate(sensores_disponibles):
+            if s_name in sensores_seleccionados and idx_s < len(lista_columnas):
+                col_real = lista_columnas[idx_s]
+                
+                if col_real in df_adv_filtrado.columns:
+                    # Crear una copia limpia para este sensor
+                    df_sensor_plot = df_adv_filtrado[['TIMESTAMP', col_real]].dropna().copy()
+                    
+                    if not df_sensor_plot.empty:
+                        # Si es GWC, aplicamos la división por densidad sobre los valores de VWC
+                        if variable_analisis == "Humedad Gravimétrica GWC (%)":
+                            y_values = df_sensor_plot[col_real].astype(float) / densidad_adv
+                        else:
+                            y_values = df_sensor_plot[col_real]
+                            
+                        prof_label = fmt_depth(col_real)
+                        
+                        fig_adv.add_trace(go.Scatter(
+                            x=df_sensor_plot['TIMESTAMP'],
+                            y=y_values,
+                            mode='lines',
+                            name=f"{s_name} ({prof_label})",
+                            line=dict(width=2),
+                            hovertemplate=f'<b>{s_name} ({prof_label})</b><br>Fecha: %{{x}}<br>{label_y}: %{{y:.2f}}<extra></extra>'
+                        ))
+                        
+        fig_adv.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#161b22",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=50, r=30, t=30, b=50),
+            xaxis=dict(showgrid=True, gridcolor="#21262d", title=None),
+            yaxis=dict(title=variable_analisis, showgrid=True, gridcolor="#21262d"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=520
+        )
+        
+        st.plotly_chart(fig_adv, use_container_width=True)
+        
+        # --- Exportador CSV Dinámico de la selección ---
+        st.markdown("---")
+        st.markdown("##### 📥 Exportar Datos Combinados")
+        st.caption("Genera un reporte consolidado ordenado por columnas listo para Excel.")
+        
+        # Reestructurar tabla para exportación limpia: una columna por sensor
+        df_export_list = []
+        for idx_s, s_name in enumerate(sensores_disponibles):
+            if s_name in sensores_seleccionados and idx_s < len(lista_columnas):
+                col_real = lista_columnas[idx_s]
+                if col_real in df_adv_filtrado.columns:
+                    df_s = df_adv_filtrado[['TIMESTAMP', col_real]].copy()
+                    if variable_analisis == "Humedad Gravimétrica GWC (%)":
+                        df_s[s_name] = df_s[col_real].astype(float) / densidad_adv
+                    else:
+                        df_s[s_name] = df_s[col_real]
+                    df_export_list.append(df_s[['TIMESTAMP', s_name]].set_index('TIMESTAMP'))
+                    
+        if df_export_list:
+            df_final_export = pd.concat(df_export_list, axis=1).reset_index()
+            csv_data_adv = df_final_export.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label=f"⬇️ Descargar Datos Históricos de {proyecto_sel} (CSV)",
+                data=csv_data_adv,
+                file_name=f"analisis_{proyecto_sel}_{label_y.lower()}_{rango_tiempo.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
