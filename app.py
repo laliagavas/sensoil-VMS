@@ -223,59 +223,72 @@ def estado_sensor(vwc_str: str) -> str:
 # =============================================================================
 # 4. GENERADOR SVG DINÁMICO DEL PERFIL DE SUELO (FIJADO A ESCALA REAL 6 METROS)
 # =============================================================================
+# ── REEMPLAZA SOLO la sección 4 completa en tu app.py ──
+# Los cambios clave están marcados con # ← FIX
+
 SVG_W       = 680
-SVG_H       = 950        # Altura física del lienzo para que quepa todo el gráfico estirado
-SURFACE_Y   = 100        # Dónde empieza el suelo
-MAX_DEPTH_Y = 880        # El fondo del pozo visual en píxeles
+SURFACE_Y   = 100
 CABLE_X0    = 340
-REF_LINE_X  = 70 
+REF_LINE_X  = 70
+
 
 def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
                         ultimo_reg, rain_val, bat_val, selected_idx=0):
-    angle_visual = 22.0  
-    layers = cfg.get("soil_layers", [])
-    n_sens = cfg["max_sensores"]
+    angle_visual = 22.0
+    layers  = cfg.get("soil_layers", [])
+    n_sens  = cfg["max_sensores"]
     densidad = cfg["densidad"]
-    
-    # 💡 FORZAMOS LA ESCALA: El gráfico siempre representará una profundidad máxima de 600 cm (6 metros)
-    # Esto evita que si el sensor máximo dice "70", el gráfico se rompa o se hiper-amplifique.
-    max_cm_fijo = 600.0 
 
-    # Las capas del suelo se distribuyen en el espacio total útil
-    layer_h = max(30, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
+    # ── FIX 1: calcular la profundidad REAL del último sensor ──────────────────
+    # En lugar de fijar 600 cm, medimos el sensor más profundo del proyecto.
+    profundidades = []
+    for i in range(n_sens):
+        cv = cols_vwc[i] if i < len(cols_vwc) else None
+        dc = depth_cm(cv) if cv else (i + 1) * 80.0
+        # Si los cm son muy pequeños (< 150), aplicamos el mismo espaciado visual que antes
+        if dc < 150.0:
+            dist_vis = (i + 1) * 70.0
+        else:
+            dist_vis = dc
+        profundidades.append(dist_vis)
 
-    # FACTOR DE ESCALA ESTABLE: mapea 600 cm reales en los 780 píxeles disponibles
-    px_per_cm = (MAX_DEPTH_Y - SURFACE_Y) / max_cm_fijo
-    
+    prof_max_cm = max(profundidades) if profundidades else 600.0
+
+    # ── FIX 2: calcular SVG_H dinámicamente para que el último sensor SIEMPRE quepa ──
+    # Queremos que el sensor más profundo quede a un 88% del alto total,
+    # dejando margen inferior de ~12% para que se vea bien.
+    MARGIN_BOTTOM_PX = 80   # píxeles de margen bajo el último sensor
+    MARGIN_TOP_PX    = SURFACE_Y  # ya definido arriba
+
+    # Fórmula: MAX_DEPTH_Y = SURFACE_Y + prof_max_cm * px_per_cm
+    # Queremos dx = dy * tan(angle), con el último sensor visible.
+    # Primero fijamos una altura mínima razonable de 700 px de área de suelo.
+    MIN_SOIL_H = 700
+    # px_per_cm debe dar al menos MIN_SOIL_H para el sensor más profundo
+    px_per_cm = max(MIN_SOIL_H / prof_max_cm, 1.1)
+
+    MAX_DEPTH_Y = SURFACE_Y + round(prof_max_cm * px_per_cm)
+    SVG_H       = MAX_DEPTH_Y + MARGIN_BOTTOM_PX  # ← FIX: altura total dinámica
+
+    layer_h = max(40, (MAX_DEPTH_Y - SURFACE_Y) // max(len(layers), 1))
+
+    # ── Calcular posiciones de sensores ───────────────────────────────────────
     sensors = []
     for i in range(n_sens):
         cv = cols_vwc[i]  if i < len(cols_vwc)  else None
         ct = cols_temp[i] if i < len(cols_temp) else None
         cp = cols_pt[i]   if i < len(cols_pt)   else None
         cd = cols_dpt[i]  if i < len(cols_dpt)  else None
-        
-        # Si la función depth_cm nos da un valor muy chico (ej. 10, 20, 30 cm) lo usamos, 
-        # si no hay columna, los espacia de forma secuencial.
-        dc = depth_cm(cv) if cv else (i + 1) * 40.0
-        
-        # 💡 TRUCO DE CONTROL: Si los sensores reales están muy juntos en los primeros centímetros, 
-        # multiplicamos su espaciado visual dinámicamente para que se separen bien a lo largo del cable.
-        # Si el pozo es corto en cm reales, simulamos un espaciado visual de 80cm por sensor para que luzca bien.
-        if dc < 150.0:  
-            distancia_visual_cm = (i + 1) * 70.0
-        else:
-            distancia_visual_cm = dc
 
-        dy = distancia_visual_cm * px_per_cm
+        dc = depth_cm(cv) if cv else (i + 1) * 80.0
+        dist_vis = (i + 1) * 70.0 if dc < 150.0 else dc
+
+        dy = dist_vis * px_per_cm
         dx = dy * math.tan(math.radians(angle_visual))
-        
         sx = round(CABLE_X0 + dx, 1)
         sy = round(SURFACE_Y + dy, 1)
-        
-        # Evitar de forma estricta que cualquier sensor toque o pase el límite inferior físico
-        if sy > MAX_DEPTH_Y:
-            sy = MAX_DEPTH_Y
 
+        # ← FIX 3: ya no limitamos con MAX_DEPTH_Y porque ahora el SVG es suficientemente alto
         vwc_v = safe_val(ultimo_reg, cv, 2) if cv else "N/D"
         gwc_v = calcular_gwc(vwc_v, densidad)
 
@@ -284,39 +297,37 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
             "label": f"S{i+1}",
             "depth": fmt_depth(cv) if cv else f"{dc/100:.2f} m",
             "x": sx, "y": sy,
-            "vwc":   vwc_v,
-            "gwc":   gwc_v,
-            "temp": safe_val(ultimo_reg, ct, 1)  if ct else "N/D",
-            "pt":   safe_val(ultimo_reg, cp, 0)  if cp else "N/D",
-            "dpt":  safe_val(ultimo_reg, cd, 1)  if cd else "N/D",
+            "vwc":  vwc_v,
+            "gwc":  gwc_v,
+            "temp": safe_val(ultimo_reg, ct, 1) if ct else "N/D",
+            "pt":   safe_val(ultimo_reg, cp, 0) if cp else "N/D",
+            "dpt":  safe_val(ultimo_reg, cd, 1) if cd else "N/D",
         })
 
+    # ── Capas de suelo ─────────────────────────────────────────────────────────
     layer_svg = []
     for idx, (color, _) in enumerate(layers):
         y_top = SURFACE_Y + idx * layer_h
-        h     = layer_h
-        if idx == len(layers) - 1:
-            h = SVG_H - y_top
+        h = layer_h if idx < len(layers) - 1 else SVG_H - y_top
         layer_svg.append(
             f'<rect x="0" y="{y_top}" width="{SVG_W}" height="{h}" fill="{color}"/>'
             f'<rect x="0" y="{y_top+h-1}" width="{SVG_W}" height="1.5" fill="#2a1a08" opacity="0.25"/>'
         )
 
-    last      = sensors[-1]
-    cable_ex  = last["x"]
-    cable_ey  = last["y"]
+    last     = sensors[-1]
+    cable_ex = last["x"]
+    cable_ey = last["y"]
 
+    # ── Pines ──────────────────────────────────────────────────────────────────
     pins_svg = []
     for s in sensors:
-        px, py     = s["x"], s["y"]
-        tip_w      = 175
-        tip_h      = 116
-        
-        tip_x      = px + 22
+        px, py  = s["x"], s["y"]
+        tip_w   = 175
+        tip_h   = 116
+        tip_x   = px + 22
         if tip_x + tip_w > SVG_W - 6:
             tip_x = px - tip_w - 22
-            
-        tip_y      = py - 25
+        tip_y = py - 25
         if tip_y + tip_h > SVG_H - 15:
             tip_y = SVG_H - tip_h - 15
 
@@ -329,45 +340,36 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     <circle class="vms-halo" cx="{px}" cy="{py}" r="13" fill="#1f7fe8" opacity="0.15" style="animation-delay:{delay}"/>
     <circle cx="{px}" cy="{py}" r="8" fill="#1255b0" stroke="{ring_color}" stroke-width="2.2"/>
     <circle cx="{px}" cy="{py}" r="3.5" fill="{ring_color}"/>
-    
     <rect x="{px+11}" y="{py-11}" width="28" height="15" rx="4" fill="#0a1f3c" stroke="#1f7fe8" stroke-width="0.8"/>
-    <text x="{px+25}" y="{py-3}" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="{ring_color}">{s['label']}</text>
+    <text x="{px+25}" y="{py-3}" text-anchor="middle" dominant-baseline="central"
+          font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" fill="{ring_color}">{s['label']}</text>
     <g class="vms-tip" opacity="0" pointer-events="none">
       <rect x="{tip_x-4}" y="{tip_y}" width="{tip_w}" height="{tip_h}" rx="7" fill="#0d1a2e" stroke="#1f7fe8" stroke-width="0.9"/>
       <text x="{tip_x+3}" y="{tip_y+18}" font-family="'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#7dc3ff">{s['label']} · {s['depth']}</text>
-      <text x="{tip_x+3}" y="{tip_y+34}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
-        VWC: <tspan font-weight="700" fill="#3dd68c">{s['vwc']} %</tspan>
-        &#160;&#160;GWC: <tspan font-weight="700" fill="#a5f3fc">{s['gwc']} %</tspan>
-      </text>
-      <text x="{tip_x+3}" y="{tip_y+50}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
-        Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mb</tspan>
-        &#160;Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan>
-      </text>
-      <text x="{tip_x+3}" y="{tip_y+66}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">
-        Temp: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan>
-      </text>
-      <text x="{tip_x+3}" y="{tip_y+84}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
-        Pluviómetro: <tspan font-weight="600" fill="#e6edf3">{rain_val} mm</tspan>
-      </text>
-      <text x="{tip_x+3}" y="{tip_y+98}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">
-        Batería: <tspan font-weight="600" fill="#e6edf3">{bat_val} V</tspan>
-      </text>
+      <text x="{tip_x+3}" y="{tip_y+34}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">VWC: <tspan font-weight="700" fill="#3dd68c">{s['vwc']} %</tspan> &#160;GWC: <tspan font-weight="700" fill="#a5f3fc">{s['gwc']} %</tspan></text>
+      <text x="{tip_x+3}" y="{tip_y+50}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">Presión: <tspan font-weight="700" fill="#c084fc">{s['pt']} mb</tspan> &#160;Nivel: <tspan font-weight="700" fill="#38bdf8">{s['dpt']} cm</tspan></text>
+      <text x="{tip_x+3}" y="{tip_y+66}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#a8cce8">Temp: <tspan font-weight="700" fill="#f6a03a">{s['temp']} °C</tspan></text>
+      <text x="{tip_x+3}" y="{tip_y+84}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">Pluviómetro: <tspan font-weight="600" fill="#e6edf3">{rain_val} mm</tspan></text>
+      <text x="{tip_x+3}" y="{tip_y+98}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#9ca3af">Batería: <tspan font-weight="600" fill="#e6edf3">{bat_val} V</tspan></text>
       <text x="{tip_x+3}" y="{tip_y+111}" font-family="'Segoe UI',sans-serif" font-size="9" fill="#4a9aaa">Clic para fijar selección →</text>
     </g>
   </g>""")
 
+    # ── Línea de referencia vertical ───────────────────────────────────────────
     ref_svg = f"""
-  <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}" stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.6"/>
-  <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}" fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.6"/>
+  <line x1="{REF_LINE_X}" y1="{SURFACE_Y}" x2="{REF_LINE_X}" y2="{MAX_DEPTH_Y}"
+        stroke="#38bdf8" stroke-width="1.3" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M{REF_LINE_X-4} {MAX_DEPTH_Y-8} L{REF_LINE_X} {MAX_DEPTH_Y} L{REF_LINE_X+4} {MAX_DEPTH_Y-8}"
+        fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.6"/>
   <text x="{REF_LINE_X-46}" y="{SURFACE_Y-8}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">NIVEL DE</text>
-  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>
-"""
+  <text x="{REF_LINE_X-46}" y="{SURFACE_Y+4}" font-family="'Segoe UI',sans-serif" font-size="10" fill="#38bdf8" opacity="0.8">TERRENO</text>"""
 
+    # ── Regla de profundidad ───────────────────────────────────────────────────
     ruler_marks = 7
-    ruler_svg   = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
+    ruler_svg = [f'<line x1="634" y1="{SURFACE_Y}" x2="634" y2="{MAX_DEPTH_Y}" stroke="#ffffff" stroke-width="0.5" opacity="0.25"/>']
     for i in range(ruler_marks):
         ry = SURFACE_Y + i * (MAX_DEPTH_Y - SURFACE_Y) // (ruler_marks - 1)
-        current_m = (i * (max_cm_fijo / 100.0)) / (ruler_marks - 1)
+        current_m = (i * (prof_max_cm / 100.0)) / (ruler_marks - 1)
         ruler_svg.append(
             f'<line x1="628" y1="{ry}" x2="640" y2="{ry}" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>'
             f'<text x="646" y="{ry+4}" font-family="\'Segoe UI\',sans-serif" font-size="10" fill="#c8dae8" opacity="0.7">{current_m:.1f} m</text>'
@@ -375,50 +377,50 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
     sensors_json = json.dumps(sensors)
 
+    # ── FIX 4: iframe height = SVG_H + 20 px de margen ────────────────────────
+    iframe_h = SVG_H + 20
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
 <style>
   *{{margin:0;padding:0;box-sizing:border-box}}
-  html,body{{background:transparent;overflow:hidden}}
-  svg{{display:block;width:100%}}
+  html,body{{background:transparent;overflow:hidden;height:{SVG_H}px}}
+  svg{{display:block;width:100%;height:{SVG_H}px}}
   @keyframes vms-pulse{{0%,100%{{r:13;opacity:0.15}}50%{{r:19;opacity:0.07}}}}
   .vms-halo{{animation:vms-pulse 2.6s ease-in-out infinite}}
   .vms-sensor:hover .vms-tip{{opacity:1!important}}
   .vms-sensor:hover circle:nth-child(2){{filter:brightness(1.3)}}
 </style>
 </head><body>
-<svg viewBox="0 0 {SVG_W} {SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 {SVG_W} {SVG_H}" xmlns="http://www.w3.org/2000/svg"
+     preserveAspectRatio="xMidYMid meet">
 <defs>
   <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#c2dff0"/>
     <stop offset="100%" stop-color="#9ec8e4"/>
   </linearGradient>
 </defs>
-
 <rect x="0" y="0" width="{SVG_W}" height="{SURFACE_Y}" fill="url(#sky)"/>
-
 <rect x="292" y="38" width="96" height="58" rx="8" fill="#ddeeff" stroke="#80aacc" stroke-width="1"/>
 <rect x="300" y="26" width="80" height="14" rx="3" fill="#4a90d9" stroke="#2a70b9" stroke-width="0.8"/>
-<text x="340" y="60" text-anchor="middle" dominant-baseline="central" font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#1a3a5c">VMS</text>
-<text x="340" y="78" text-anchor="middle" font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
+<text x="340" y="60" text-anchor="middle" dominant-baseline="central"
+      font-family="'Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#1a3a5c">VMS</text>
+<text x="340" y="78" text-anchor="middle"
+      font-family="'Segoe UI',sans-serif" font-size="9" fill="#3a6080">Estación</text>
 <line x1="376" y1="26" x2="384" y2="12" stroke="#4a7a9a" stroke-width="1.5"/>
 <circle cx="386" cy="10" r="3" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>
-
 <rect x="0" y="{SURFACE_Y}" width="{SVG_W}" height="10" fill="#9a7c48"/>
-
 {"".join(layer_svg)}
 {ref_svg}
-
-<line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}" stroke="#2e7a2e" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
-<line x1="{CABLE_X0+4}" y1="{SURFACE_Y+8}" x2="{cable_ex+4:.1f}" y2="{cable_ey:.1f}" stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
-
+<line x1="{CABLE_X0}" y1="{SURFACE_Y+8}" x2="{cable_ex:.1f}" y2="{cable_ey:.1f}"
+      stroke="#2e7a2e" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+<line x1="{CABLE_X0+4}" y1="{SURFACE_Y+8}" x2="{cable_ex+4:.1f}" y2="{cable_ey:.1f}"
+      stroke="#c8a820" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
 {"".join(pins_svg)}
 {"".join(ruler_svg)}
-
 </svg>
 
 <script>
-const SENSORS = {sensors_json};
 document.querySelectorAll('.vms-sensor').forEach(el => {{
   el.addEventListener('click', () => {{
     const idx = parseInt(el.dataset.idx);
@@ -429,15 +431,12 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
     }}, "*");
   }});
 }});
-(function resize() {{
-  const h = document.body.scrollHeight || document.documentElement.scrollHeight;
-  if (h > 80) window.parent.postMessage({{
-    isstreamlitMessage: true,
-    type: "streamlit:setFrameHeight",
-    height: Math.ceil(h) + 15
-  }}, "*");
-  setTimeout(resize, 500);
-}})();
+// ← FIX 5: enviamos la altura EXACTA calculada en Python, sin depender de scrollHeight
+window.parent.postMessage({{
+  isstreamlitMessage: true,
+  type: "streamlit:setFrameHeight",
+  height: {iframe_h}
+}}, "*");
 </script>
 </body></html>"""
 
