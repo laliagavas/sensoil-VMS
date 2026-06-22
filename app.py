@@ -10,13 +10,14 @@ import plotly.express as px
 st.set_page_config(
     page_title="VMS SENSOIL",
     page_icon="🌍",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"  # Oculta la barra lateral vacía por defecto
 )
 
 st.markdown("""
 <style>
     .stApp { background-color: #0d1117; color: #e6edf3; }
-    section[data-testid="stSidebar"] { background-color: #161b22; border-right: 1px solid #30363d; }
+    section[data-testid="stSidebar"] { display: none; } /* Fuerza la desaparición visual del sidebar */
     .stTabs [data-baseweb="tab-list"] { background-color: #161b22; border-radius: 8px; padding: 4px; }
     .stTabs [data-baseweb="tab"] { color: #8b949e; border-radius: 6px; }
     .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; }
@@ -85,8 +86,8 @@ st.markdown("""
 CONFIG_PROYECTOS = {
     "DRF": {
         "nombre_estacion": "VMS - DRF - HUASCO",
-        "csv_data":    "DRF.csv",        # <- CORREGIDO: Apuntaba a Romeral.csv
-        "csv_rain":    "DRFRain.csv",    # <- CORREGIDO: Apuntaba a RomeralRain.csv
+        "csv_data":    "DRF.csv",        
+        "csv_rain":    "DRFRain.csv",    
         "max_sensores": 7,
         "angle_deg":   55.0,
         "diametro_perforacion": "HQ (96 mm)",
@@ -384,11 +385,6 @@ document.querySelectorAll('.vms-sensor').forEach(el => {{
 # ────────────────────────────────────────────────────────────────────────
 @st.dialog("📊 Histórico e Instrumentación del Sensor", width="large")
 def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, cols_dpt):
-    """
-    Se eliminaron los argumentos estáticos de fecha y variable.
-    Ahora se gestionan dinámicamente mediante el estado de sesión dentro del modal.
-    """
-    
     # 1. Recuperar nombres de columnas de instrumentación correspondientes al índice
     cv = cols_vwc[idx]  if idx < len(cols_vwc)  else None
     ct = cols_temp[idx] if idx < len(cols_temp) else None
@@ -401,7 +397,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     c_fecha, c_var = st.columns(2)
     
     with c_fecha:
-        # Buscamos la fecha máxima disponible en el DataFrame para usarla por defecto
         fecha_max_global = df_data['TIMESTAMP'].max().date() if 'TIMESTAMP' in df_data.columns else pd.Timestamp.now().date()
         fecha_sel = st.date_input(
             "📅 Selecciona fecha de simulación:",
@@ -410,7 +405,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         )
         
     with c_var:
-        # Selector de la variable de interés para la serie temporal
         opciones_variables = ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"]
         variable_grafico = st.selectbox(
             "📈 Variable para Tendencia Histórica:",
@@ -422,7 +416,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     st.markdown("---")
 
     # 3. FILTRADO TEMPORAL DEL DATO ACTUAL (Métricas del encabezado)
-    # Buscamos el registro más cercano a la fecha seleccionada para mostrar los Kpi's congelados en ese día
     fecha_limite_kpi = pd.to_datetime(fecha_sel) + pd.Timedelta(days=1)
     df_actual = df_data[df_data['TIMESTAMP'] < fecha_limite_kpi]
     
@@ -430,7 +423,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         ultimo_registro = df_actual.iloc[-1]
         fecha_lectura_str = ultimo_registro['TIMESTAMP'].strftime('%Y-%m-%d %H:%M')
     else:
-        # Fallback en caso de que no haya registros previos a la fecha elegida
         ultimo_registro = df_data.iloc[-1] if not df_data.empty else None
         fecha_lectura_str = "Sin datos para esta fecha"
 
@@ -447,7 +439,6 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
     </div>
     """, unsafe_allow_html=True)
 
-    # Renderizado seguro de métricas
     m1, m2, m3, m4 = st.columns(4)
     if ultimo_registro is not None:
         with m1: st.metric("💧 Humedad VWC",       f"{safe_val(ultimo_registro, cv)} %"    if cv else "N/D")
@@ -484,25 +475,13 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
         df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
         
         if not df_g.empty:
-            # Construcción adaptativa con Plotly Express
-            fig = px.line(
-                df_g, 
-                x='Fecha', 
-                y=variable_grafico,
-                template="plotly_dark"
-            )
-            
+            fig = px.line(df_g, x='Fecha', y=variable_grafico, template="plotly_dark")
             fig.update_traces(line=dict(color='#388bfd', width=2.5))
             fig.update_layout(
                 margin=dict(l=50, r=20, t=20, b=40),
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(
-                    showgrid=True, 
-                    gridcolor='#21262d', 
-                    title=None,
-                    tickformat='%d %b\n%H:%M'
-                ),
+                xaxis=dict(showgrid=True, gridcolor='#21262d', title=None, tickformat='%d %b\n%H:%M'),
                 yaxis=dict(
                     showgrid=True, 
                     gridcolor='#21262d', 
@@ -513,11 +492,8 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
             )
             
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-            # Tabla estructurada de datos históricos justo debajo (como tenías antes)
             st.dataframe(df_g, use_container_width=True, hide_index=True)
 
-            # Botón de exportación dinámico
             df_export = df_g.set_index('Fecha')
             csv_bytes = df_export.to_csv().encode("utf-8")
             st.download_button(
@@ -534,35 +510,10 @@ def modal_historico(id_proyecto, idx, df_data, cols_vwc, cols_temp, cols_pt, col
 
     if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
         st.rerun()
-# ─────────────────────────────────────────────
-# 6. SIDEBAR
-# ─────────────────────────────────────────────
-with st.sidebar:
-    st.image(
-        "https://sensoil.com/wp-content/uploads/2021/04/Sensoil-Logo-Vertical.png",
-        width=130,
-    )
-    st.markdown("## VMS GeoCloud")
-    st.markdown("---")
-
-    df_aux, _ = cargar_datos_proyecto("ROMERAL")
-    fechas_sim = (
-        sorted(df_aux['TIMESTAMP'].dt.date.unique(), reverse=True)
-        if df_aux is not None else []
-    )
-
-    fecha_sel = st.selectbox(
-        "📅 Fecha de simulación:", fechas_sim, key="global_fecha_sel"
-    )
-    variable_grafico = st.selectbox(
-        "📈 Variable histórica:",
-        ["Humedad (VWC %)", "Temperatura (°C)", "Presión de Celda (mbar)", "Nivel (cm)"],
-        key="global_var_sel",
-    )
 
 
 # ─────────────────────────────────────────────
-# 7. PANEL POR PROYECTO
+# 6. PANEL POR PROYECTO
 # ─────────────────────────────────────────────
 def construir_interfaz_proyecto(id_proyecto: str):
     cfg = CONFIG_PROYECTOS[id_proyecto]
@@ -576,6 +527,21 @@ def construir_interfaz_proyecto(id_proyecto: str):
     cols_temp = get_cols(df_data, "TEMP", n)
     cols_pt   = get_cols(df_data, "PT",   n)
     cols_dpt  = get_cols(df_data, "DPT",  n)
+
+    # El control de fecha superior ahora busca la fecha máxima del set de datos directamente
+    if f"fecha_sim_{id_proyecto}" not in st.session_state:
+        st.session_state[f"fecha_sim_{id_proyecto}"] = df_data['TIMESTAMP'].max().date() if not df_data.empty else pd.Timestamp.now().date()
+    
+    # Selector de fecha integrado de forma elegante arriba en lugar del sidebar
+    fechas_disponibles = sorted(df_data['TIMESTAMP'].dt.date.unique(), reverse=True) if not df_data.empty else []
+    
+    col_header, col_date_pick = st.columns([2.5, 1.5])
+    with col_date_pick:
+        fecha_sel = st.selectbox(
+            "📅 Fecha activa de simulación:",
+            options=fechas_disponibles,
+            key=f"sb_date_{id_proyecto}"
+        )
 
     df_dia = df_data[df_data['TIMESTAMP'].dt.date == fecha_sel]
     if df_dia.empty:
@@ -631,7 +597,6 @@ def construir_interfaz_proyecto(id_proyecto: str):
             ultimo, selected_idx=sel_idx,
         )
         st.components.v1.html(html_code, height=660, scrolling=False)
-
         st.markdown("""<div style="font-size:0.72rem; color:#6e7681; text-align:center; margin-top:6px;">ℹ️ Las profundidades indicadas corresponden a la distancia medida a lo largo del eje del pozo (inclinación indicada).</div>""", unsafe_allow_html=True)
 
     with col_der:
@@ -647,9 +612,13 @@ def construir_interfaz_proyecto(id_proyecto: str):
         with b1:
             if st.button("📈 Ver Histórico", key=f"hist_{id_proyecto}", use_container_width=True):
                 modal_historico(
-                    id_proyecto, sel_idx, df_data, ultimo,
-                    cols_vwc, cols_temp, cols_pt, cols_dpt,
-                    fecha_sel, variable_grafico,
+                    id_proyecto=id_proyecto,
+                    idx=sel_idx,
+                    df_data=df_data,
+                    cols_vwc=cols_vwc,
+                    cols_temp=cols_temp,
+                    cols_pt=cols_pt,
+                    cols_dpt=cols_dpt
                 )
         with b2:
             fila_export = ultimo[[c for c in [cv, ct, cp, cd, 'TIMESTAMP'] if c]]
@@ -677,7 +646,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
         st.dataframe(pd.DataFrame(resumen), use_container_width=True, hide_index=True)
 
 # ─────────────────────────────────────────────
-# 8. PESTAÑAS PRINCIPALES
+# 7. PESTAÑAS PRINCIPALES
 # ─────────────────────────────────────────────
 tab_drf, tab_romeral = st.tabs([
     "📍 Estación DRF",
