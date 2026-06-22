@@ -432,17 +432,23 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
         "Nivel (cm)":              cd,
     }
     col_obj = mapeo.get(variable_grafico)
-    
     if col_obj and col_obj in df_f.columns:
-        # Eliminamos filas donde la variable sea nula para que no rompa la línea del gráfico
+        # 1. Extraemos las columnas limpias
         df_g = df_f[['TIMESTAMP', col_obj]].dropna().copy()
         df_g.columns = ['Fecha', f"S{idx+1} ({prof})"]
+        
+        # ── SOLUCIÓN AQUÍ ──
+        # Forzamos la conversión de la columna 'Fecha' a datetime real de Pandas
+        df_g['Fecha'] = pd.to_datetime(df_g['Fecha'])
+        
+        # Seteamos el índice para el gráfico
         df_g.set_index('Fecha', inplace=True)
         
         if not df_g.empty:
-            # Despliega el gráfico nativo de Streamlit con los datos ya indexados por tiempo
+            # Desplegamos el gráfico de líneas nativo con el índice temporal explícito
             st.line_chart(df_g, use_container_width=True)
 
+            # Botón de descarga de la serie temporal estructurada
             csv_bytes = df_g.to_csv().encode("utf-8")
             st.download_button(
                 "⬇️ Exportar serie completa (CSV)",
@@ -453,12 +459,6 @@ def modal_historico(id_proyecto, idx, df_data, ultimo_registro,
             )
         else:
             st.warning("⚠️ No se encontraron puntos de datos válidos para graficar en el rango seleccionado.")
-    else:
-        st.error("⚠️ La variable seleccionada no coincide con ninguna columna válida en el archivo CSV.")
-
-    if st.button("Cerrar", key=f"close_hist_{id_proyecto}_{idx}", use_container_width=True):
-        st.rerun()
-
 
 # ─────────────────────────────────────────────
 # 6. SIDEBAR
