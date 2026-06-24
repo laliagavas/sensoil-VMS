@@ -193,7 +193,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
     # Altura del iframe: escala con el número de sensores
-    iframe_h = 120 + n_sens * 72 + 260   # topbar + perfil SVG + chart
+    iframe_h = 110 + n_sens * 72 + 60    # topbar + perfil SVG
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -201,7 +201,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#0d1117;color:#e6edf3;max-width:960px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
+html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #21262d;flex-wrap:wrap;gap:6px}}
 .topbar-left{{display:flex;align-items:center;gap:8px}}
 .logo-badge{{width:30px;height:30px;border-radius:7px;background:#1f3a5c;display:flex;align-items:center;justify-content:center;color:#58a6ff;font-size:14px}}
@@ -228,11 +228,6 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:960px;margin:0 auto;font-f
 .profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden}}
 .profile-svg{{display:block;width:100%}}
 
-
-.chart-tabs{{display:flex;gap:4px;padding:0 0 6px}}
-.ctab{{padding:3px 10px;font-size:10px;border:1px solid #30363d;border-radius:20px;cursor:pointer;color:#8b949e;background:transparent;transition:all .12s}}
-.ctab.active{{background:#1f3a5c;border-color:#1f6feb;color:#58a6ff}}
-.chart-wrap{{position:relative;height:130px}}
 
 .det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px}}
 .det-card{{background:#161b22;border:1px solid #21262d;border-radius:9px;padding:9px 11px}}
@@ -299,14 +294,7 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:960px;margin:0 auto;font-f
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
       Selecciona un sensor para ver sus datos
     </div>
-    <div class="chart-tabs" id="chart-tabs">
-      <button class="ctab active" onclick="setVar('vwc')">VWC</button>
-      <button class="ctab" onclick="setVar('gwc')">GWC</button>
-      <button class="ctab" onclick="setVar('temp')">Temp</button>
-      <button class="ctab" onclick="setVar('pt')">Presión</button>
-    </div>
-    <div class="chart-wrap"><canvas id="trend-{id_proyecto}"></canvas></div>
-    <div style="font-size:10px;color:#6e7681;text-align:center">Perfil de sensor activo a lo largo del pozo</div>
+
   </div>
 
   <!-- PANEL DERECHO -->
@@ -336,14 +324,11 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:960px;margin:0 auto;font-f
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const SENSORS  = {sensors_json};
 const LAYERS   = {layers_json};
 const N        = SENSORS.length;
 let selIdx     = {selected_idx};
-let chartVar   = 'vwc';
-let trendChart = null;
 
 function sensorPos(i) {{
   const W=280, H=480, SY=80;
@@ -409,7 +394,6 @@ function selectSensor(i) {{
   buildSVG();
   buildSensorList();
   buildDetailCard();
-  buildTrendChart();
   // Notifica a Streamlit el sensor seleccionado
   window.parent.postMessage({{
     isstreamlitMessage: true,
@@ -443,57 +427,9 @@ function buildDetailCard() {{
     <div class="det-row"><span>Nivel</span><span style="color:#38bdf8">${{s.dpt}} cm</span></div>`;
 }}
 
-function setVar(v) {{
-  chartVar = v;
-  document.querySelectorAll('.ctab').forEach(b => {{
-    b.classList.toggle('active',
-      (v === 'vwc' && b.textContent === 'VWC') ||
-      (v === 'gwc' && b.textContent === 'GWC') ||
-      (v === 'temp' && b.textContent === 'Temp') ||
-      (v === 'pt' && b.textContent === 'Presión')
-    );
-  }});
-  buildTrendChart();
-}}
-
-function buildTrendChart() {{
-  const labels = SENSORS.map(s => s.label);
-  const paleta = {{ vwc:'#3dd68c', gwc:'#a5f3fc', temp:'#f6a03a', pt:'#a78bfa' }};
-  const col = paleta[chartVar] || '#3dd68c';
-  const vals = SENSORS.map(s => {{
-    if (chartVar === 'vwc')  return parseFloat(s.vwc)  || 0;
-    if (chartVar === 'gwc')  return parseFloat(s.gwc)  || 0;
-    if (chartVar === 'temp') return parseFloat(s.temp) || 0;
-    if (chartVar === 'pt')   return parseFloat(s.pt)   || 0;
-    return 0;
-  }});
-  const titles = {{ vwc:'VWC (%)', gwc:'GWC (%)', temp:'Temp (°C)', pt:'Presión (mb)' }};
-  if (trendChart) trendChart.destroy();
-  trendChart = new Chart(document.getElementById('trend-{id_proyecto}'), {{
-    type: 'bar',
-    data: {{
-      labels,
-      datasets: [{{
-        data: vals, backgroundColor: col + '55', borderColor: col,
-        borderWidth: 1.5, borderRadius: 4
-      }}]
-    }},
-    options: {{
-      responsive: true, maintainAspectRatio: false,
-      plugins: {{ legend: {{ display: false }} }},
-      scales: {{
-        x: {{ grid: {{ color: 'rgba(255,255,255,0.06)' }}, ticks: {{ font: {{ size: 10 }}, color: '#8b949e' }} }},
-        y: {{ grid: {{ color: 'rgba(255,255,255,0.06)' }}, ticks: {{ font: {{ size: 10 }}, color: '#8b949e', maxTicksLimit: 4 }},
-              title: {{ display: true, text: titles[chartVar], color: '#8b949e', font: {{ size: 10 }} }} }}
-      }}
-    }}
-  }});
-}}
-
 buildSVG();
 buildSensorList();
 buildDetailCard();
-buildTrendChart();
 
 window.parent.postMessage({{
   isstreamlitMessage: true,
@@ -673,7 +609,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
-    iframe_h   = 120 + n_sens * 72 + 260
+    iframe_h   = 110 + n_sens * 72 + 60
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
@@ -727,7 +663,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
