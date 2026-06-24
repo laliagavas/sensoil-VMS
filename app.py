@@ -193,7 +193,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
     # Altura del iframe: escala con el número de sensores
-    iframe_h = 110 + n_sens * 75 + 60    # topbar + perfil SVG
+    iframe_h = 110 + n_sens * 72 + 60    # topbar + perfil SVG
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -201,7 +201,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#0d1117;color:#e6edf3;max-width:850px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
+html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #21262d;flex-wrap:wrap;gap:6px}}
 .topbar-left{{display:flex;align-items:center;gap:8px}}
 .logo-badge{{width:30px;height:30px;border-radius:7px;background:#1f3a5c;display:flex;align-items:center;justify-content:center;color:#58a6ff;font-size:14px}}
