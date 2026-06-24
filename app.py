@@ -227,7 +227,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 
 /* CAMBIO CLAVE: El área del perfil ahora escala correctamente */
 .profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px;justify-content:center;align-items:center;overflow:hidden}}
-.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;background:#0d1117;width:100%;max-width:320px;display:flex;justify-content:center}}
+.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;background:#0d1117;width:100%;max-width:420px;display:flex;justify-content:center}}
 .profile-svg{{display:block;width:100%;height:auto;max-height:calc(100vh - 110px)}}
 
 .det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}}
