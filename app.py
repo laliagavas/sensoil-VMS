@@ -193,7 +193,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
     # SVG height scales with sensor count
-    svg_h = 60 + n_sens * 40 + 60
+    svg_h = 80 + n_sens * 68 + 60
     iframe_h = 55 + svg_h + 40   # topbar + SVG height + bottom pad
 
     return f"""<!DOCTYPE html>
@@ -243,7 +243,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .rb-val{{font-size:15px;font-weight:600;color:#e6edf3}}
 .rb-unit{{font-size:9px;color:#8b949e}}
 
-@media(max-width:860px){{
+@media(max-width:560px){{
   .main-grid{{grid-template-columns:1fr}}
   .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}}
   .sidebar>div{{flex:1;min-width:130px}}
@@ -289,7 +289,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
   <!-- PERFIL CENTRAL -->
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
-      <svg id="profile-svg" class="profile-svg" viewBox="0 0 480 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="profile-svg" class="profile-svg" viewBox="0 0 280 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
@@ -610,7 +610,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
-    svg_h_calc = 110 + n_sens * 68 + 60
+    svg_h_calc = 80 + n_sens * 68 + 60
     iframe_h   = 55 + svg_h_calc + 40
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
@@ -665,7 +665,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
