@@ -41,7 +41,7 @@ st.markdown("""
 # ─────────────────────────────────────────────
 CONFIG_PROYECTOS = {
     "DRF": {
-        "nombre_estacion": "VMS - DRF - HUASCO",
+        "nombre_estacion": "Relave A",
         "csv_data":    "DRF.csv",
         "csv_rain":    "DRFRain.csv",
         "csv_monitor": "DRFFTPMonitor.csv",
@@ -57,7 +57,7 @@ CONFIG_PROYECTOS = {
         ],
     },
     "ROMERAL": {
-        "nombre_estacion": "VMS - EL ROMERAL",
+        "nombre_estacion": "Relave B",
         "csv_data":    "Romeral.csv",
         "csv_rain":    "RomeralRain.csv",
         "csv_monitor": "RomeralFTPMonitor.csv",
@@ -228,13 +228,6 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden}}
 .profile-svg{{display:block;width:100%}}
 
-.tt{{position:absolute;background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:9px 11px;min-width:180px;pointer-events:none;opacity:0;transition:opacity .15s;font-size:12px;z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.5)}}
-.tt.vis{{opacity:1}}
-.tt-title{{font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:5px}}
-.tt-row{{display:flex;justify-content:space-between;gap:12px;padding:2px 0}}
-.tt-row span:first-child{{color:#8b949e}}
-.tt-row span:last-child{{font-weight:600}}
-.tt-div{{border:none;border-top:1px solid #21262d;margin:4px 0}}
 
 .chart-tabs{{display:flex;gap:4px;padding:0 0 6px}}
 .ctab{{padding:3px 10px;font-size:10px;border:1px solid #30363d;border-radius:20px;cursor:pointer;color:#8b949e;background:transparent;transition:all .12s}}
@@ -301,11 +294,10 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
       <svg id="profile-svg" class="profile-svg" viewBox="0 0 280 480" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="tt" id="tt"></div>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
-      Pasa el cursor o toca un sensor
+      Selecciona un sensor para ver sus datos
     </div>
     <div class="chart-tabs" id="chart-tabs">
       <button class="ctab active" onclick="setVar('vwc')">VWC</button>
@@ -407,35 +399,9 @@ function buildSVG() {{
   document.getElementById('profile-svg').innerHTML = h;
   document.querySelectorAll('.pin').forEach(pin => {{
     const i = parseInt(pin.dataset.idx);
-    pin.addEventListener('mouseenter', e => showTip(i));
-    pin.addEventListener('mouseleave', () => document.getElementById('tt').classList.remove('vis'));
     pin.addEventListener('touchstart', e => {{ e.preventDefault(); selectSensor(i); }});
     pin.addEventListener('click', () => selectSensor(i));
   }});
-}}
-
-function showTip(i) {{
-  const s = SENSORS[i];
-  const tip = document.getElementById('tt');
-  tip.innerHTML = `<div class="tt-title">${{s.label}} · ${{s.depth}}</div>
-    <div class="tt-row"><span>VWC</span><span style="color:#3dd68c">${{s.vwc}} %</span></div>
-    <div class="tt-row"><span>GWC</span><span style="color:#3dd68c">${{s.gwc}} %</span></div>
-    <hr class="tt-div">
-    <div class="tt-row"><span>Temp</span><span style="color:#f6a03a">${{s.temp}} °C</span></div>
-    <div class="tt-row"><span>Presión</span><span style="color:#a78bfa">${{s.pt}} mb</span></div>
-    <div class="tt-row"><span>Nivel</span><span style="color:#38bdf8">${{s.dpt}} cm</span></div>`;
-  const p = sensorPos(i);
-  const svgEl = document.getElementById('profile-svg');
-  const sr = svgEl.getBoundingClientRect();
-  const wrap = document.getElementById('profile-wrap');
-  const scX = sr.width / 280, scY = sr.height / 480;
-  let tx = p.x * scX + 14, ty = p.y * scY - 28;
-  if (tx + 195 > wrap.offsetWidth - 6) tx = p.x * scX - 205;
-  if (ty < 4) ty = 4;
-  if (ty + 155 > sr.height - 4) ty = sr.height - 159;
-  tip.style.left = tx + 'px';
-  tip.style.top = ty + 'px';
-  tip.classList.add('vis');
 }}
 
 function selectSensor(i) {{
@@ -874,8 +840,8 @@ tab_monitoreo, tab_avanzado = st.tabs([
 
 with tab_monitoreo:
     tab_drf, tab_romeral = st.tabs([
-        "📍 Estación DRF",
-        "📍 Estación El Romeral",
+        "📍 Relave A",
+        "📍 Relave B",
     ])
     with tab_drf:
         construir_interfaz_proyecto("DRF")
