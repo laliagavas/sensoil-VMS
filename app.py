@@ -194,7 +194,8 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
     # SVG height scales with sensor count
     svg_h = 80 + n_sens * 68 + 60
-    iframe_h = 55 + svg_h + 40   # topbar + SVG height + bottom pad
+    # SVG rendered at max 420px wide → height = 420*(svg_h/280) = 1.5*svg_h
+    iframe_h = 55 + int(320 * svg_h / 280) + 60
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -226,8 +227,8 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .legend-row{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;padding:3px 0;line-height:1.4}}
 
 .profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px}}
-.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;display:flex;justify-content:center}}
-.profile-svg{{display:block;height:{svg_h}px;width:auto;max-width:100%}}
+.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden}}
+.profile-svg{{display:block;width:320px;height:auto;margin:0 auto}}
 
 
 .det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px}}
@@ -245,6 +246,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 
 @media(max-width:560px){{
   .main-grid{{grid-template-columns:1fr}}
+  .profile-svg{{width:100%}}
   .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}}
   .sidebar>div{{flex:1;min-width:130px}}
   .det-panel{{border-left:none;border-top:1px solid #21262d;flex-direction:row;flex-wrap:wrap}}
@@ -611,7 +613,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
     svg_h_calc = 80 + n_sens * 68 + 60
-    iframe_h   = 55 + svg_h_calc + 40
+    iframe_h   = 55 + int(320 * svg_h_calc / 280) + 60
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
