@@ -28,7 +28,7 @@ st.markdown("""
     .stButton > button {
         background: linear-gradient(135deg, #1f6feb, #388bfd);
         color: white; border: none; border-radius: 8px;
-        font-weight: 800; padding: 0.5rem 1.2rem;
+        font-weight: 600; padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
     }
     .stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(31,111,235,0.4); }
@@ -193,7 +193,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
     # SVG height scales with sensor count
-    svg_h = 60 + n_sens * 68 + 60
+    svg_h = 60 + n_sens * 100 + 60
     iframe_h = 55 + svg_h + 40   # topbar + SVG height + bottom pad
 
     return f"""<!DOCTYPE html>
