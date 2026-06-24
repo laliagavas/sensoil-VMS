@@ -28,7 +28,7 @@ st.markdown("""
     .stButton > button {
         background: linear-gradient(135deg, #1f6feb, #388bfd);
         color: white; border: none; border-radius: 8px;
-        font-weight: 600; padding: 0.5rem 1.2rem;
+        font-weight: 800; padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
     }
     .stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(31,111,235,0.4); }
