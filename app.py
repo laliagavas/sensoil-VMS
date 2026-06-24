@@ -243,7 +243,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .rb-val{{font-size:15px;font-weight:600;color:#e6edf3}}
 .rb-unit{{font-size:9px;color:#8b949e}}
 
-@media(max-width:560px){{
+@media(max-width:860px){{
   .main-grid{{grid-template-columns:1fr}}
   .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}}
   .sidebar>div{{flex:1;min-width:130px}}
@@ -289,7 +289,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
   <!-- PERFIL CENTRAL -->
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
-      <svg id="profile-svg" class="profile-svg" viewBox="0 0 580 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="profile-svg" class="profile-svg" viewBox="0 0 480 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
