@@ -201,7 +201,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
+html,body{{background:#0d1117;color:#e6edf3;max-width:960px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #21262d;flex-wrap:wrap;gap:6px}}
 .topbar-left{{display:flex;align-items:center;gap:8px}}
 .logo-badge{{width:30px;height:30px;border-radius:7px;background:#1f3a5c;display:flex;align-items:center;justify-content:center;color:#58a6ff;font-size:14px}}
@@ -305,7 +305,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
       <button class="ctab" onclick="setVar('temp')">Temp</button>
       <button class="ctab" onclick="setVar('pt')">Presión</button>
     </div>
-    <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+    <div class="chart-wrap"><canvas id="trend-{id_proyecto}"></canvas></div>
     <div style="font-size:10px;color:#6e7681;text-align:center">Perfil de sensor activo a lo largo del pozo</div>
   </div>
 
@@ -469,7 +469,7 @@ function buildTrendChart() {{
   }});
   const titles = {{ vwc:'VWC (%)', gwc:'GWC (%)', temp:'Temp (°C)', pt:'Presión (mb)' }};
   if (trendChart) trendChart.destroy();
-  trendChart = new Chart(document.getElementById('trend-chart'), {{
+  trendChart = new Chart(document.getElementById('trend-{id_proyecto}'), {{
     type: 'bar',
     data: {{
       labels,
@@ -727,11 +727,13 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
+    st.markdown("")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
-        proyecto_sel = st.selectbox("Estación de Monitoreo", ["ROMERAL", "DRF"], key="adv_proj_sel")
+        _opciones_estacion = {"Relave A": "DRF", "Relave B": "ROMERAL"}
+        _nombre_sel = st.selectbox("Estación de monitoreo", list(_opciones_estacion.keys()), key="adv_proj_sel")
+        proyecto_sel = _opciones_estacion[_nombre_sel]
         cfg_adv   = CONFIG_PROYECTOS[proyecto_sel]
         densidad_adv = cfg_adv["densidad"]
     with col_time:
@@ -749,7 +751,7 @@ def construir_analisis_avanzado():
 
     df_adv_raw, err_adv = cargar_datos_proyecto(proyecto_sel)
     if err_adv or df_adv_raw is None:
-        st.error(f"No se pudieron cargar los datos históricos para {proyecto_sel}.")
+        st.error(f"No se pudieron cargar los datos históricos para {_nombre_sel}.")
         return
 
     n_adv         = cfg_adv["max_sensores"]
@@ -823,9 +825,9 @@ def construir_analisis_avanzado():
     if df_export_list:
         df_final_export = pd.concat(df_export_list, axis=1).reset_index()
         st.download_button(
-            label=f"⬇️ Descargar Datos de {proyecto_sel} (CSV)",
+            label=f"⬇️ Descargar Datos de {_nombre_sel} (CSV)",
             data=df_final_export.to_csv(index=False).encode('utf-8'),
-            file_name=f"analisis_{proyecto_sel}_{label_y.lower().replace(' ', '_')}.csv",
+            file_name=f"analisis_{_nombre_sel.replace(' ', '_')}_{label_y.lower().replace(' ', '_')}.csv",
             mime="text/csv", use_container_width=True
         )
 
