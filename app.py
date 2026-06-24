@@ -193,7 +193,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
     # SVG height scales with sensor count
-    svg_h = 60 + n_sens * 50 + 60
+    svg_h = 60 + n_sens * 40 + 60
     iframe_h = 55 + svg_h + 40   # topbar + SVG height + bottom pad
 
     return f"""<!DOCTYPE html>
