@@ -247,7 +247,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 @media(max-width:768px){{
   html,body{{overflow-y:auto}}
   .main-grid{{grid-template-columns:1fr;height:auto;overflow:visible}}
-  .profile-wrap{{max-width:280px;margin: 0 auto;}}
+  .profile-wrap{{max-width:400px;margin: 0 auto;}}
   .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;overflow:visible}}
   .sidebar>div{{腔ex:1;min-width:130px}}
   .det-panel{{border-left:none;border-top:1px solid #21262d;flex-direction:row;flex-wrap:wrap;overflow:visible}}
