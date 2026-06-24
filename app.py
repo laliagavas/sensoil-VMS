@@ -194,7 +194,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
     # SVG height scales with sensor count
     svg_h = 80 + n_sens * 68 + 60
-    iframe_h = 55 + svg_h + 30   # topbar + SVG height + bottom pad
+    iframe_h = 55 + svg_h + 40   # topbar + SVG height + bottom pad
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -202,7 +202,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
+html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #21262d;flex-wrap:wrap;gap:6px}}
 .topbar-left{{display:flex;align-items:center;gap:8px}}
 .logo-badge{{width:30px;height:30px;border-radius:7px;background:#1f3a5c;display:flex;align-items:center;justify-content:center;color:#58a6ff;font-size:14px}}
@@ -226,8 +226,8 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-
 .legend-row{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;padding:3px 0;line-height:1.4}}
 
 .profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px}}
-.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden}}
-.profile-svg{{display:block;width:100%}}
+.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;display:flex;justify-content:center}}
+.profile-svg{{display:block;height:{svg_h}px;width:auto;max-width:100%}}
 
 
 .det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px}}
@@ -611,7 +611,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
     svg_h_calc = 80 + n_sens * 68 + 60
-    iframe_h   = 55 + svg_h_calc + 30
+    iframe_h   = 55 + svg_h_calc + 40
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
@@ -665,7 +665,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
+    st.markdown("")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
