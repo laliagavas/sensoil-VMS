@@ -192,8 +192,9 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     layers_json   = json.dumps(layers)
     estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
-    # Altura del iframe: escala con el número de sensores
-    iframe_h = 110 + n_sens * 72 + 60    # topbar + perfil SVG
+    # SVG height scales with sensor count
+    svg_h = 80 + n_sens * 68 + 60
+    iframe_h = 55 + svg_h + 30   # topbar + SVG height + bottom pad
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -210,7 +211,7 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-
 .demo-pill{{background:#2d2205;color:#d29922;border:1px solid #4a3800;border-radius:20px;padding:3px 9px;font-size:10px;font-weight:600}}
 .live-dot{{width:6px;height:6px;border-radius:50%;background:#3dd68c;display:inline-block;margin-right:4px;animation:pulse 2s infinite}}
 @keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.4}}}}
-.main-grid{{display:grid;grid-template-columns:160px 1fr 185px;min-height:420px}}
+.main-grid{{display:grid;grid-template-columns:160px 1fr 185px;min-height:{svg_h}px}}
 .sidebar{{border-right:1px solid #21262d;padding:10px}}
 .sidebar-label{{font-size:10px;font-weight:600;color:#8b949e;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px}}
 .sensor-btn{{display:flex;align-items:center;gap:6px;width:100%;padding:5px 7px;border:1px solid #30363d;border-radius:7px;background:transparent;cursor:pointer;font-size:11px;color:#e6edf3;margin-bottom:3px;transition:background .12s}}
@@ -288,7 +289,7 @@ html,body{{background:#0d1117;color:#e6edf3;max-width:1100px;margin:0 auto;font-
   <!-- PERFIL CENTRAL -->
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
-      <svg id="profile-svg" class="profile-svg" viewBox="0 0 280 480" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="profile-svg" class="profile-svg" viewBox="0 0 280 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
@@ -331,7 +332,7 @@ const N        = SENSORS.length;
 let selIdx     = {selected_idx};
 
 function sensorPos(i) {{
-  const W=280, H=480, SY=80;
+  const W=280, H={svg_h}, SY=80;
   const spacing = (H - SY - 40) / (N + 0.5);
   const dy = (i + 1) * spacing;
   const dx = dy * Math.tan(16 * Math.PI / 180);
@@ -339,7 +340,7 @@ function sensorPos(i) {{
 }}
 
 function buildSVG() {{
-  const W=280, H=480, SY=80;
+  const W=280, H={svg_h}, SY=80;
   const lh = (H - SY) / LAYERS.length;
   let h = `<defs><linearGradient id="skyg" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#b8d8ee"/>
@@ -609,7 +610,8 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
-    iframe_h   = 110 + n_sens * 72 + 60
+    svg_h_calc = 80 + n_sens * 68 + 60
+    iframe_h   = 55 + svg_h_calc + 30
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
