@@ -665,36 +665,79 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
 
 # ─────────────────────────────────────────────
-# 7. ANÁLISIS AVANZADO (sin cambios funcionales)
+# 7. ANÁLISIS AVANZADO
 # ─────────────────────────────────────────────
+
+def _cargar_csv_serie(filepath: str, col_ts: int, col_val: int, sep: str = ",") -> pd.DataFrame | None:
+    """Carga un CSV auxiliar (rain / monitor) y retorna DataFrame con TIMESTAMP y VALUE."""
+    if not os.path.exists(filepath):
+        return None
+    try:
+        df = pd.read_csv(filepath, sep=sep, header=None)
+        df = df.iloc[:, [col_ts, col_val]].copy()
+        df.columns = ["TIMESTAMP", "VALUE"]
+        df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"], errors="coerce")
+        df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
+        return df.dropna()
+    except Exception:
+        return None
+
+_LAYOUT_DARK = dict(
+    template="plotly_dark",
+    paper_bgcolor="#161b22",
+    plot_bgcolor="rgba(0,0,0,0)",
+    margin=dict(l=50, r=30, t=30, b=50),
+    xaxis=dict(showgrid=True, gridcolor="#21262d", title=None),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    height=380,
+)
+
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
 
+    # ── Controles globales ────────────────────────────────────────────────
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
         _opciones_estacion = {"Relave A": "DRF", "Relave B": "ROMERAL"}
-        _nombre_sel = st.selectbox("Estación de monitoreo", list(_opciones_estacion.keys()), key="adv_proj_sel")
+        _nombre_sel  = st.selectbox("Estación de monitoreo", list(_opciones_estacion.keys()), key="adv_proj_sel")
         proyecto_sel = _opciones_estacion[_nombre_sel]
-        cfg_adv   = CONFIG_PROYECTOS[proyecto_sel]
+        cfg_adv      = CONFIG_PROYECTOS[proyecto_sel]
         densidad_adv = cfg_adv["densidad"]
     with col_time:
         rango_tiempo = st.selectbox(
-            "Rango Temporal (Eje X)",
+            "Rango temporal",
             ["Últimos 7 días", "Últimos 30 días", "Últimos 90 días", "Histórico Completo"],
             index=1, key="adv_time_sel"
         )
     with col_var:
         variable_analisis = st.selectbox(
-            "Métrica a graficar",
+            "Métrica de sensores",
             ["Humedad VWC (%)", "Humedad Gravimétrica GWC (%)", "Presión de Poros (mbar)", "Temperatura (°C)"],
             key="adv_var_sel"
         )
 
+    # ── Rango de fechas ───────────────────────────────────────────────────
     df_adv_raw, err_adv = cargar_datos_proyecto(proyecto_sel)
     if err_adv or df_adv_raw is None:
         st.error(f"No se pudieron cargar los datos históricos para {_nombre_sel}.")
         return
+
+    hoy = df_adv_raw['TIMESTAMP'].max() if not df_adv_raw.empty else pd.Timestamp.now()
+    deltas = {"Últimos 7 días": 7, "Últimos 30 días": 30, "Últimos 90 días": 90}
+    fecha_limite = hoy - pd.Timedelta(days=deltas[rango_tiempo]) \
+        if rango_tiempo in deltas else df_adv_raw['TIMESTAMP'].min()
+
+    def _filtrar(df):
+        return df[df['TIMESTAMP'] >= fecha_limite].sort_values('TIMESTAMP').copy()
+
+    df_adv_filtrado = _filtrar(df_adv_raw)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 1 — Sensores de humedad / presión / temperatura
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 🌡️ Sensores de Profundidad")
 
     n_adv         = cfg_adv["max_sensores"]
     cols_vwc_adv  = get_cols(df_adv_raw, "VWC",  n_adv)
@@ -703,29 +746,21 @@ def construir_analisis_avanzado():
 
     sensores_disponibles   = [f"S{i+1}" for i in range(n_adv)]
     sensores_seleccionados = st.multiselect(
-        "Seleccionar Sensores en Pantalla",
+        "Sensores visibles",
         options=sensores_disponibles, default=sensores_disponibles,
         key="adv_sensors_multiselect"
     )
 
-    hoy = df_adv_raw['TIMESTAMP'].max() if not df_adv_raw.empty else pd.Timestamp.now()
-    deltas = {
-        "Últimos 7 días": 7, "Últimos 30 días": 30,
-        "Últimos 90 días": 90
-    }
-    fecha_limite = hoy - pd.Timedelta(days=deltas[rango_tiempo]) \
-        if rango_tiempo in deltas else df_adv_raw['TIMESTAMP'].min()
-    df_adv_filtrado = df_adv_raw[df_adv_raw['TIMESTAMP'] >= fecha_limite].sort_values('TIMESTAMP').copy()
-
     mapeo_prefijo = {
-        "Humedad VWC (%)":               (cols_vwc_adv,  "VWC"),
-        "Humedad Gravimétrica GWC (%)":  (cols_vwc_adv,  "GWC"),
-        "Presión de Poros (mbar)":       (cols_pt_adv,   "Presión"),
-        "Temperatura (°C)":              (cols_temp_adv, "Temp"),
+        "Humedad VWC (%)":              (cols_vwc_adv,  "VWC"),
+        "Humedad Gravimétrica GWC (%)": (cols_vwc_adv,  "GWC"),
+        "Presión de Poros (mbar)":      (cols_pt_adv,   "Presión"),
+        "Temperatura (°C)":             (cols_temp_adv, "Temp"),
     }
     lista_columnas, label_y = mapeo_prefijo[variable_analisis]
 
-    fig_adv = go.Figure()
+    fig_sens = go.Figure()
+    df_export_list = []
     for idx_s, s_name in enumerate(sensores_disponibles):
         if s_name in sensores_seleccionados and idx_s < len(lista_columnas):
             col_real = lista_columnas[idx_s]
@@ -735,41 +770,122 @@ def construir_analisis_avanzado():
                     y_vals = df_s[col_real].astype(float) / densidad_adv \
                         if variable_analisis == "Humedad Gravimétrica GWC (%)" \
                         else df_s[col_real]
-                    fig_adv.add_trace(go.Scatter(
+                    fig_sens.add_trace(go.Scatter(
                         x=df_s['TIMESTAMP'], y=y_vals, mode='lines',
                         name=f"{s_name} ({fmt_depth(col_real)})",
                         line=dict(width=2),
-                        hovertemplate=f'<b>{s_name}</b><br>Fecha: %{{x}}<br>{label_y}: %{{y:.2f}}<extra></extra>'
+                        hovertemplate=f'<b>{s_name}</b><br>%{{x}}<br>{label_y}: %{{y:.2f}}<extra></extra>'
                     ))
+                    tmp = df_s.rename(columns={col_real: s_name}).set_index('TIMESTAMP')
+                    if variable_analisis == "Humedad Gravimétrica GWC (%)":
+                        tmp[s_name] = tmp[s_name].astype(float) / densidad_adv
+                    df_export_list.append(tmp)
 
-    fig_adv.update_layout(
-        template="plotly_dark", paper_bgcolor="#161b22",
-        plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=50, r=30, t=30, b=50),
-        xaxis=dict(showgrid=True, gridcolor="#21262d", title=None),
+    fig_sens.update_layout(
+        **_LAYOUT_DARK,
         yaxis=dict(title=variable_analisis, showgrid=True, gridcolor="#21262d"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=520
+        height=420,
     )
-    st.plotly_chart(fig_adv, use_container_width=True)
+    st.plotly_chart(fig_sens, use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("##### 📥 Exportar Datos Combinados")
-    df_export_list = []
-    for idx_s, s_name in enumerate(sensores_disponibles):
-        if s_name in sensores_seleccionados and idx_s < len(lista_columnas):
-            col_real = lista_columnas[idx_s]
-            if col_real in df_adv_filtrado.columns:
-                df_s = df_adv_filtrado[['TIMESTAMP', col_real]].copy()
-                df_s[s_name] = df_s[col_real].astype(float) / densidad_adv \
-                    if variable_analisis == "Humedad Gravimétrica GWC (%)" \
-                    else df_s[col_real]
-                df_export_list.append(df_s[['TIMESTAMP', s_name]].set_index('TIMESTAMP'))
     if df_export_list:
-        df_final_export = pd.concat(df_export_list, axis=1).reset_index()
+        df_exp = pd.concat(df_export_list, axis=1).reset_index()
         st.download_button(
-            label=f"⬇️ Descargar Datos de {_nombre_sel} (CSV)",
-            data=df_final_export.to_csv(index=False).encode('utf-8'),
-            file_name=f"analisis_{_nombre_sel.replace(' ', '_')}_{label_y.lower().replace(' ', '_')}.csv",
+            label=f"⬇️ Exportar sensores — {_nombre_sel} (CSV)",
+            data=df_exp.to_csv(index=False).encode('utf-8'),
+            file_name=f"{_nombre_sel.replace(' ','_')}_{label_y.lower().replace(' ','_')}.csv",
+            mime="text/csv", use_container_width=True
+        )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 2 — Pluviómetro: ambos relaves en el mismo gráfico
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 🌧️ Histórico de Lluvia — Ambos Relaves")
+
+    fig_rain = go.Figure()
+    rain_exports = {}
+    for nombre_disp, key_proj in {"Relave A": "DRF", "Relave B": "ROMERAL"}.items():
+        cfg_r = CONFIG_PROYECTOS[key_proj]
+        df_r  = _cargar_csv_serie(cfg_r["csv_rain"], col_ts=0, col_val=3)
+        if df_r is not None and not df_r.empty:
+            df_r = df_r[df_r['TIMESTAMP'] >= fecha_limite].copy()
+            if not df_r.empty:
+                fig_rain.add_trace(go.Bar(
+                    x=df_r['TIMESTAMP'], y=df_r['VALUE'],
+                    name=nombre_disp,
+                    opacity=0.75,
+                    hovertemplate=f'<b>{nombre_disp}</b><br>%{{x}}<br>Lluvia: %{{y:.2f}} mm<extra></extra>'
+                ))
+                rain_exports[nombre_disp] = df_r.set_index('TIMESTAMP').rename(columns={'VALUE': nombre_disp})
+        else:
+            st.caption(f"⚠️ Sin datos de lluvia para {nombre_disp} ({cfg_r['csv_rain']})")
+
+    fig_rain.update_layout(
+        **_LAYOUT_DARK,
+        barmode='group',
+        yaxis=dict(title="Precipitación (mm)", showgrid=True, gridcolor="#21262d"),
+        height=320,
+    )
+    st.plotly_chart(fig_rain, use_container_width=True)
+
+    if rain_exports:
+        df_rain_exp = pd.concat(rain_exports.values(), axis=1).reset_index()
+        df_rain_exp.columns = ['TIMESTAMP'] + list(rain_exports.keys())
+        st.download_button(
+            label="⬇️ Exportar lluvia — Ambos Relaves (CSV)",
+            data=df_rain_exp.to_csv(index=False).encode('utf-8'),
+            file_name=f"lluvia_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
+            mime="text/csv", use_container_width=True
+        )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN 3 — Voltaje / Batería: ambos relaves
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 🔋 Histórico de Voltaje del Sistema — Ambos Relaves")
+    st.caption("Monitoreo del estado de la batería del datalogger. Valores normales: 12–13.5 V.")
+
+    fig_bat = go.Figure()
+    bat_exports = {}
+    colores_bat = {"Relave A": "#3dd68c", "Relave B": "#38bdf8"}
+    for nombre_disp, key_proj in {"Relave A": "DRF", "Relave B": "ROMERAL"}.items():
+        cfg_b = CONFIG_PROYECTOS[key_proj]
+        df_b  = _cargar_csv_serie(cfg_b["csv_monitor"], col_ts=0, col_val=2)
+        if df_b is not None and not df_b.empty:
+            df_b = df_b[df_b['TIMESTAMP'] >= fecha_limite].copy()
+            if not df_b.empty:
+                fig_bat.add_trace(go.Scatter(
+                    x=df_b['TIMESTAMP'], y=df_b['VALUE'],
+                    mode='lines', name=nombre_disp,
+                    line=dict(width=2, color=colores_bat[nombre_disp]),
+                    hovertemplate=f'<b>{nombre_disp}</b><br>%{{x}}<br>Batería: %{{y:.2f}} V<extra></extra>'
+                ))
+                # Línea de alerta en 11.5V
+                fig_bat.add_hline(
+                    y=11.5, line_dash="dot",
+                    line_color="#f87171", opacity=0.5,
+                    annotation_text="Mín. operación (11.5V)",
+                    annotation_position="bottom right"
+                )
+                bat_exports[nombre_disp] = df_b.set_index('TIMESTAMP').rename(columns={'VALUE': nombre_disp})
+        else:
+            st.caption(f"⚠️ Sin datos de batería para {nombre_disp} ({cfg_b['csv_monitor']})")
+
+    fig_bat.update_layout(
+        **_LAYOUT_DARK,
+        yaxis=dict(title="Voltaje (V)", showgrid=True, gridcolor="#21262d", rangemode='tozero'),
+        height=320,
+    )
+    st.plotly_chart(fig_bat, use_container_width=True)
+
+    if bat_exports:
+        df_bat_exp = pd.concat(bat_exports.values(), axis=1).reset_index()
+        df_bat_exp.columns = ['TIMESTAMP'] + list(bat_exports.keys())
+        st.download_button(
+            label="⬇️ Exportar voltaje — Ambos Relaves (CSV)",
+            data=df_bat_exp.to_csv(index=False).encode('utf-8'),
+            file_name=f"voltaje_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
             mime="text/csv", use_container_width=True
         )
 
