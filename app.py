@@ -689,7 +689,6 @@ _LAYOUT_DARK = dict(
     margin=dict(l=50, r=30, t=30, b=50),
     xaxis=dict(showgrid=True, gridcolor="#21262d", title=None),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    height=380,
 )
 
 def construir_analisis_avanzado():
