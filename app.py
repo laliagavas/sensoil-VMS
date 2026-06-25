@@ -195,7 +195,7 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
     # SVG height scales with sensor count
     svg_h = 80 + n_sens * 68 + 60
     # SVG rendered at max 420px wide → height = 420*(svg_h/280) = 1.5*svg_h
-    iframe_h = 55 + int(500 * svg_h / 380) + 60
+    iframe_h = 55 + int(900 * svg_h / 820) + 60
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -227,7 +227,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .legend-row{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;padding:3px 0;line-height:1.4}}
 
 .profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px}}
-.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;max-width:500px;margin:0 auto}}
+.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;max-width:900px;margin:0 auto}}
 .profile-svg{{display:block;width:100%;height:auto}}
 
 
@@ -291,7 +291,7 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
   <!-- PERFIL CENTRAL -->
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
-      <svg id="profile-svg" class="profile-svg" viewBox="0 0 380 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="profile-svg" class="profile-svg" viewBox="0 0 820 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
@@ -334,7 +334,7 @@ const N        = SENSORS.length;
 let selIdx     = {selected_idx};
 
 function sensorPos(i) {{
-  const W=380, H={svg_h}, SY=80;
+  const W=820, H={svg_h}, SY=80;
   const spacing = (H - SY - 40) / (N + 0.5);
   const dy = (i + 1) * spacing;
   const dx = dy * Math.tan(16 * Math.PI / 180);
@@ -342,7 +342,7 @@ function sensorPos(i) {{
 }}
 
 function buildSVG() {{
-  const W=380, H={svg_h}, SY=80;
+  const W=820, H={svg_h}, SY=80;
   const lh = (H - SY) / LAYERS.length;
   let h = `<defs><linearGradient id="skyg" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#b8d8ee"/>
@@ -355,33 +355,33 @@ function buildSVG() {{
     if (i > 0) h += `<line x1="0" y1="${{y}}" x2="${{W}}" y2="${{y}}" stroke="#2a1508" stroke-width="0.5" opacity="0.3"/>`;
   }});
   h += `<rect x="0" y="${{SY}}" width="${{W}}" height="6" fill="#9a7c48"/>`;
-  h += `<rect x="100" y="20" width="70" height="46" rx="6" fill="#ddeeff" stroke="#80aacc" stroke-width="0.7"/>
-        <rect x="108" y="13" width="54" height="10" rx="3" fill="#4a90d9" stroke="#2a70b9" stroke-width="0.5"/>
-        <text x="135" y="41" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="600" fill="#1a3a5c">VMS</text>
-        <text x="135" y="55" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#3a6080">Estación</text>
-        <line x1="158" y1="13" x2="164" y2="5" stroke="#4a7a9a" stroke-width="1"/>
-        <circle cx="165" cy="4" r="2" fill="none" stroke="#4a9ad9" stroke-width="1"/>`;
+  h += `<rect x="355" y="20" width="110" height="54" rx="8" fill="#ddeeff" stroke="#80aacc" stroke-width="0.9"/>
+        <rect x="368" y="12" width="84" height="12" rx="4" fill="#4a90d9" stroke="#2a70b9" stroke-width="0.6"/>
+        <text x="410" y="46" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="700" fill="#1a3a5c">VMS</text>
+        <text x="410" y="62" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#3a6080">Estación</text>
+        <line x1="455" y1="12" x2="465" y2="4" stroke="#4a7a9a" stroke-width="1.2"/>
+        <circle cx="467" cy="3" r="2.5" fill="none" stroke="#4a9ad9" stroke-width="1.2"/>`;
   const last = sensorPos(N - 1);
   const cx0 = W * 0.38;
   h += `<line x1="${{cx0}}" y1="${{SY+4}}" x2="${{last.x.toFixed(1)}}" y2="${{last.y.toFixed(1)}}" stroke="#2e7a2e" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>`;
   h += `<line x1="${{cx0+3}}" y1="${{SY+4}}" x2="${{(last.x+3).toFixed(1)}}" y2="${{last.y.toFixed(1)}}" stroke="#c8a820" stroke-width="2.2" stroke-linecap="round" opacity="0.8"/>`;
-  h += `<line x1="252" y1="${{SY}}" x2="252" y2="${{H-20}}" stroke="white" stroke-width="0.3" opacity="0.2"/>`;
+  h += `<line x1="720" y1="${{SY}}" x2="720" y2="${{H-20}}" stroke="white" stroke-width="0.3" opacity="0.2"/>`;
   SENSORS.forEach((s, i) => {{
     const p = sensorPos(i);
-    h += `<line x1="247" y1="${{p.y.toFixed(1)}}" x2="257" y2="${{p.y.toFixed(1)}}" stroke="#7dc3ff" stroke-width="0.5" opacity="0.45"/>`;
-    h += `<text x="260" y="${{(p.y+3).toFixed(1)}}" font-family="sans-serif" font-size="7.5" fill="rgba(125,195,255,0.65)">${{s.depth}}</text>`;
+    h += `<line x1="715" y1="${{p.y.toFixed(1)}}" x2="725" y2="${{p.y.toFixed(1)}}" stroke="#7dc3ff" stroke-width="0.8" opacity="0.6"/>`;
+    h += `<text x="730" y="${{(p.y+4).toFixed(1)}}" font-family="sans-serif" font-size="13" fill="rgba(125,195,255,0.9)">${{s.depth}}</text>`;
   }});
   SENSORS.forEach((s, i) => {{
     const p = sensorPos(i);
     const isSel = i === selIdx;
     const ring = isSel ? '#ffe066' : '#7dc3ff';
     h += `<g class="pin" data-idx="${{i}}" style="cursor:pointer">
-      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="12" fill="#1f7fe8" opacity="0.07"/>
-      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="7.5" fill="#0e2d5c" stroke="${{ring}}" stroke-width="1.8"/>
-      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="2.8" fill="${{ring}}"/>
-      <rect x="${{(p.x+9).toFixed(1)}}" y="${{(p.y-9).toFixed(1)}}" width="24" height="13" rx="3" fill="#0a1f3c" stroke="${{ring}}" stroke-width="0.6"/>
-      <text x="${{(p.x+21).toFixed(1)}}" y="${{(p.y+0.5).toFixed(1)}}" text-anchor="middle" dominant-baseline="central"
-            font-family="sans-serif" font-size="8" font-weight="700" fill="${{ring}}">${{s.label}}</text>
+      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="16" fill="#1f7fe8" opacity="0.08"/>
+      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="10" fill="#0e2d5c" stroke="${{ring}}" stroke-width="2.2"/>
+      <circle cx="${{p.x.toFixed(1)}}" cy="${{p.y.toFixed(1)}}" r="3.5" fill="${{ring}}"/>
+      <rect x="${{(p.x+12).toFixed(1)}}" y="${{(p.y-11).toFixed(1)}}" width="34" height="16" rx="4" fill="#0a1f3c" stroke="${{ring}}" stroke-width="0.8"/>
+      <text x="${{(p.x+29).toFixed(1)}}" y="${{(p.y+0.5).toFixed(1)}}" text-anchor="middle" dominant-baseline="central"
+            font-family="sans-serif" font-size="10" font-weight="700" fill="${{ring}}">${{s.label}}</text>
     </g>`;
   }});
   document.getElementById('profile-svg').innerHTML = h;
@@ -613,7 +613,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
     svg_h_calc = 80 + n_sens * 68 + 60
-    iframe_h   = 55 + int(500 * svg_h_calc / 380) + 60
+    iframe_h   = 55 + int(900 * svg_h_calc / 820) + 60
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
@@ -667,7 +667,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
