@@ -190,17 +190,20 @@ def render_soil_profile(id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt
 
     sensors_json  = json.dumps(sensors)
     layers_json   = json.dumps(layers)
+    estado_general = estado_sensor(sensors[selected_idx]["vwc"] if sensors else "N/D")
 
-    # El SVG mantendrá una escala interna nativa sobre un ancho virtual de 280
+    # SVG height scales with sensor count
     svg_h = 80 + n_sens * 68 + 60
+    # SVG rendered at max 420px wide → height = 420*(svg_h/280) = 1.5*svg_h
+    iframe_h = 55 + int(500 * svg_h / 380) + 60
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow:hidden}}
+html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow-x:hidden}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #21262d;flex-wrap:wrap;gap:6px}}
 .topbar-left{{display:flex;align-items:center;gap:8px}}
 .logo-badge{{width:30px;height:30px;border-radius:7px;background:#1f3a5c;display:flex;align-items:center;justify-content:center;color:#58a6ff;font-size:14px}}
@@ -209,10 +212,8 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .demo-pill{{background:#2d2205;color:#d29922;border:1px solid #4a3800;border-radius:20px;padding:3px 9px;font-size:10px;font-weight:600}}
 .live-dot{{width:6px;height:6px;border-radius:50%;background:#3dd68c;display:inline-block;margin-right:4px;animation:pulse 2s infinite}}
 @keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.4}}}}
-
-/* CAMBIO CLAVE: Layout principal responsivo */
-.main-grid{{display:grid;grid-template-columns:160px 1fr 185px;height:calc(100vh - 52px);overflow:hidden}}
-.sidebar{{border-right:1px solid #21262d;padding:10px;overflow-y:auto}}
+.main-grid{{display:grid;grid-template-columns:160px 1fr 185px;min-height:{svg_h}px}}
+.sidebar{{border-right:1px solid #21262d;padding:10px}}
 .sidebar-label{{font-size:10px;font-weight:600;color:#8b949e;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px}}
 .sensor-btn{{display:flex;align-items:center;gap:6px;width:100%;padding:5px 7px;border:1px solid #30363d;border-radius:7px;background:transparent;cursor:pointer;font-size:11px;color:#e6edf3;margin-bottom:3px;transition:background .12s}}
 .sensor-btn:hover{{background:#161b22}}
@@ -225,12 +226,12 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .sp-warn{{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;background:#2d1b00;color:#d29922;border:1px solid #4a3000;margin-top:6px}}
 .legend-row{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8b949e;padding:3px 0;line-height:1.4}}
 
-/* CAMBIO CLAVE: El área del perfil ahora escala correctamente */
-.profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px;justify-content:center;align-items:center;overflow:hidden}}
-.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;background:#0d1117;width:100%;max-width:420px;display:flex;justify-content:center}}
-.profile-svg{{display:block;width:100%;height:auto;max-height:calc(100vh - 150px)}}
+.profile-area{{padding:10px;display:flex;flex-direction:column;gap:6px}}
+.profile-wrap{{position:relative;border-radius:10px;border:1px solid #21262d;overflow:hidden;max-width:500px;margin:0 auto}}
+.profile-svg{{display:block;width:100%;height:auto}}
 
-.det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}}
+
+.det-panel{{border-left:1px solid #21262d;padding:10px;display:flex;flex-direction:column;gap:8px}}
 .det-card{{background:#161b22;border:1px solid #21262d;border-radius:9px;padding:9px 11px}}
 .det-title{{font-size:10px;font-weight:600;color:#8b949e;letter-spacing:.07em;text-transform:uppercase;margin-bottom:7px}}
 .det-row{{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d;font-size:11px}}
@@ -243,16 +244,13 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 .rb-val{{font-size:15px;font-weight:600;color:#e6edf3}}
 .rb-unit{{font-size:9px;color:#8b949e}}
 
-/* CAMBIO CLAVE: Media query móvil mejorada para evitar desbordes */
-@media(max-width:768px){{
-  html,body{{overflow-y:auto}}
-  .main-grid{{grid-template-columns:1fr;height:auto;overflow:visible}}
-  .profile-wrap{{max-width:400px;margin: 0 auto;}}
-  .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;overflow:visible}}
-  .sidebar>div{{腔ex:1;min-width:130px}}
-  .det-panel{{border-left:none;border-top:1px solid #21262d;flex-direction:row;flex-wrap:wrap;overflow:visible}}
+@media(max-width:560px){{
+  .main-grid{{grid-template-columns:1fr}}
+  .profile-wrap{{max-width:100%}}
+  .sidebar{{border-right:none;border-bottom:1px solid #21262d;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}}
+  .sidebar>div{{flex:1;min-width:130px}}
+  .det-panel{{border-left:none;border-top:1px solid #21262d;flex-direction:row;flex-wrap:wrap}}
   .det-card{{flex:1;min-width:140px}}
-  .rb-grid{{flex:1;min-width:140px}}
 }}
 </style>
 </head><body>
@@ -272,6 +270,8 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
 </div>
 
 <div class="main-grid">
+
+  <!-- SIDEBAR IZQUIERDO -->
   <div class="sidebar">
     <div>
       <div class="sidebar-label">Sensores</div>
@@ -288,16 +288,19 @@ html,body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,san
     </div>
   </div>
 
+  <!-- PERFIL CENTRAL -->
   <div class="profile-area">
     <div class="profile-wrap" id="profile-wrap">
-      <svg id="profile-svg" class="profile-svg" viewBox="0 0 280 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="profile-svg" class="profile-svg" viewBox="0 0 380 {svg_h}" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div style="font-size:10px;color:#6e7681;text-align:center">
       <i class="ti ti-hand-finger" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>
       Selecciona un sensor para ver sus datos
     </div>
+
   </div>
 
+  <!-- PANEL DERECHO -->
   <div class="det-panel">
     <div class="det-card" id="detail-card">
       <div class="det-title">Lectura activa</div>
@@ -331,7 +334,7 @@ const N        = SENSORS.length;
 let selIdx     = {selected_idx};
 
 function sensorPos(i) {{
-  const W=280, H={svg_h}, SY=80;
+  const W=380, H={svg_h}, SY=80;
   const spacing = (H - SY - 40) / (N + 0.5);
   const dy = (i + 1) * spacing;
   const dx = dy * Math.tan(16 * Math.PI / 180);
@@ -339,7 +342,7 @@ function sensorPos(i) {{
 }}
 
 function buildSVG() {{
-  const W=280, H={svg_h}, SY=80;
+  const W=380, H={svg_h}, SY=80;
   const lh = (H - SY) / LAYERS.length;
   let h = `<defs><linearGradient id="skyg" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#b8d8ee"/>
@@ -394,6 +397,7 @@ function selectSensor(i) {{
   buildSVG();
   buildSensorList();
   buildDetailCard();
+  // Notifica a Streamlit el sensor seleccionado
   window.parent.postMessage({{
     isstreamlitMessage: true,
     type: "streamlit:setComponentValue",
@@ -430,17 +434,11 @@ buildSVG();
 buildSensorList();
 buildDetailCard();
 
-// Ajustar altura dinámicamente en Streamlit enviando la altura real calculada
-function resetHeight() {{
-  window.parent.postMessage({{
-    isstreamlitMessage: true,
-    type: "streamlit:setFrameHeight",
-    height: document.documentElement.scrollHeight || document.body.scrollHeight
-  }}, "*");
-}}
-window.addEventListener('load', resetHeight);
-window.addEventListener('resize', resetHeight);
-setTimeout(resetHeight, 300);
+window.parent.postMessage({{
+  isstreamlitMessage: true,
+  type: "streamlit:setFrameHeight",
+  height: document.body.scrollHeight + 20
+}}, "*");
 </script>
 </body></html>"""
 
@@ -615,7 +613,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
     # ── NUEVO: render del perfil HTML ──────────────────────────────────────
     n_sens     = cfg["max_sensores"]
     svg_h_calc = 80 + n_sens * 68 + 60
-    iframe_h = max(svg_h_calc + 150, 650)
+    iframe_h   = 55 + int(500 * svg_h_calc / 380) + 60
     html_code  = render_soil_profile(
         id_proyecto, cfg, cols_vwc, cols_temp, cols_pt, cols_dpt,
         ultimo, rain_val, bat_val, selected_idx=sel_idx,
@@ -669,7 +667,7 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
+    st.markdown("")
 
     col_proj, col_time, col_var = st.columns(3)
     with col_proj:
