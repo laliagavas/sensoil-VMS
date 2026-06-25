@@ -693,7 +693,7 @@ _LAYOUT_DARK = dict(
 
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
+    st.markdown("NICOLAIDES INDUSTRIAL")
 
     # ── Controles globales ────────────────────────────────────────────────
     col_proj, col_time, col_var = st.columns(3)
@@ -829,14 +829,18 @@ def construir_analisis_avanzado():
     st.plotly_chart(fig_rain, use_container_width=True)
 
     if rain_exports:
-        df_rain_exp = pd.concat(rain_exports.values(), axis=1).reset_index()
-        df_rain_exp.columns = ['TIMESTAMP'] + list(rain_exports.keys())
-        st.download_button(
-            label="⬇️ Exportar lluvia — Ambos Relaves (CSV)",
-            data=df_rain_exp.to_csv(index=False).encode('utf-8'),
-            file_name=f"lluvia_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
-            mime="text/csv", use_container_width=True
-        )
+        try:
+            _parts = [df.groupby(level=0).mean() for df in rain_exports.values()]
+            df_rain_exp = pd.concat(_parts, axis=1).reset_index()
+            df_rain_exp.columns = ['TIMESTAMP'] + list(rain_exports.keys())
+            st.download_button(
+                label="⬇️ Exportar lluvia — Ambos Relaves (CSV)",
+                data=df_rain_exp.to_csv(index=False).encode('utf-8'),
+                file_name=f"lluvia_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
+                mime="text/csv", use_container_width=True
+            )
+        except Exception:
+            st.caption("No se pudo generar el CSV combinado de lluvia.")
 
     # ══════════════════════════════════════════════════════════════════════
     # SECCIÓN 3 — Voltaje / Batería: ambos relaves
@@ -879,14 +883,18 @@ def construir_analisis_avanzado():
     st.plotly_chart(fig_bat, use_container_width=True)
 
     if bat_exports:
-        df_bat_exp = pd.concat(bat_exports.values(), axis=1).reset_index()
-        df_bat_exp.columns = ['TIMESTAMP'] + list(bat_exports.keys())
-        st.download_button(
-            label="⬇️ Exportar voltaje — Ambos Relaves (CSV)",
-            data=df_bat_exp.to_csv(index=False).encode('utf-8'),
-            file_name=f"voltaje_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
-            mime="text/csv", use_container_width=True
-        )
+        try:
+            _parts = [df.groupby(level=0).mean() for df in bat_exports.values()]
+            df_bat_exp = pd.concat(_parts, axis=1).reset_index()
+            df_bat_exp.columns = ['TIMESTAMP'] + list(bat_exports.keys())
+            st.download_button(
+                label="⬇️ Exportar voltaje — Ambos Relaves (CSV)",
+                data=df_bat_exp.to_csv(index=False).encode('utf-8'),
+                file_name=f"voltaje_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
+                mime="text/csv", use_container_width=True
+            )
+        except Exception:
+            st.caption("No se pudo generar el CSV combinado de voltaje.")
 
 
 # ─────────────────────────────────────────────
