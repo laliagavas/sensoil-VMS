@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-# ────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # 1. CONFIGURACIÓN GLOBAL
 # ─────────────────────────────────────────────
 st.set_page_config(
@@ -43,7 +43,7 @@ CONFIG_PROYECTOS = {
     "DRF": {
         "nombre_estacion": "Relave A",
         "csv_data":    "DRF.csv",
-        "csv_rain":    "DRFRain.csv",
+        "csv_rain":    "lluvia_DRF.xlsx",
         "csv_monitor": "DRFFTPMonitor.csv",
         "densidad":    1.89,
         "max_sensores": 7,
@@ -77,7 +77,7 @@ CONFIG_PROYECTOS = {
 # ─────────────────────────────────────────────
 # 3. UTILIDADES
 # ─────────────────────────────────────────────
-@st.cache_data
+@st.cache_data(ttl=300)
 def cargar_datos_proyecto(id_proyecto: str):
     cfg = CONFIG_PROYECTOS[id_proyecto]
     try:
@@ -669,16 +669,69 @@ def construir_interfaz_proyecto(id_proyecto: str):
 # ─────────────────────────────────────────────
 
 def _cargar_csv_serie(filepath: str, col_ts: int, col_val: int, sep: str = ",") -> pd.DataFrame | None:
-    """Carga un CSV auxiliar (rain / monitor) y retorna DataFrame con TIMESTAMP y VALUE."""
+    """Carga un CSV o XLSX auxiliar (rain / monitor) y retorna DataFrame con TIMESTAMP y VALUE."""
     if not os.path.exists(filepath):
         return None
     try:
-        df = pd.read_csv(filepath, sep=sep, header=None)
-        df = df.iloc[:, [col_ts, col_val]].copy()
-        df.columns = ["TIMESTAMP", "VALUE"]
-        df["TIMESTAMP"] = pd.to_datetime(df["TIMESTAMP"], errors="coerce")
-        df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
-        return df.dropna()
+        ext = os.path.splitext(filepath)[1].lower()
+
+        if ext in ('.xlsx', '.xls'):
+            # Archivo Excel — detectar columnas automáticamente
+            df_raw = pd.read_excel(filepath)
+            df_raw.columns = df_raw.columns.str.strip()
+
+            # Buscar columna de timestamp
+            ts_col = next((c for c in df_raw.columns
+                           if any(k in c.lower() for k in ['fecha','timestamp','time','date'])), None)
+            if ts_col is None:
+                ts_col = df_raw.columns[0]
+
+            # Buscar columna de lluvia (mm) — preferir Huasco Costa para DRF
+            val_col = next((c for c in df_raw.columns if 'Huasco' in c), None)
+            if val_col is None:
+                val_col = next((c for c in df_raw.columns
+                                if any(k in c.lower() for k in ['rain','lluvia','mm','precip'])), None)
+            if val_col is None:
+                val_col = df_raw.columns[col_val] if col_val < len(df_raw.columns) else df_raw.columns[1]
+
+            # Si hay columna de tramo horario, construir timestamp completo
+            tramo_col = next((c for c in df_raw.columns
+                              if any(k in c.lower() for k in ['tramo','hora','horario'])), None)
+            if tramo_col is not None:
+                def _parse_ts(row):
+                    try:
+                        hora = str(row[tramo_col]).split(' - ')[0].strip()
+                        return pd.to_datetime(str(pd.Timestamp(row[ts_col]).date()) + ' ' + hora)
+                    except Exception:
+                        return pd.NaT
+                df_raw['_TS'] = df_raw.apply(_parse_ts, axis=1)
+            else:
+                df_raw['_TS'] = pd.to_datetime(df_raw[ts_col], errors='coerce')
+
+            # Convertir mm/tramo a mm/hr (tramos de 3h → dividir por 3)
+            df_raw['_VAL'] = pd.to_numeric(df_raw[val_col], errors='coerce')
+            if tramo_col is not None:
+                df_raw['_VAL'] = df_raw['_VAL'] / 3.0  # mm/3h → mm/hr
+
+            df_out = df_raw[['_TS','_VAL']].copy()
+            df_out.columns = ['TIMESTAMP', 'VALUE']
+            return df_out.dropna()
+
+        else:
+            # CSV Campbell estándar — skiprows metadata
+            df = pd.read_csv(filepath, skiprows=[0, 2, 3], low_memory=False)
+            df.columns = df.columns.str.replace('"','').str.replace("'","").str.strip()
+            # Buscar columna de lluvia
+            rain_col = next((c for c in df.columns
+                             if any(k in c.lower() for k in ['rain_hr','rain','lluvia'])), None)
+            ts_col = 'TIMESTAMP' if 'TIMESTAMP' in df.columns else df.columns[col_ts]
+            val_col = rain_col if rain_col else df.columns[col_val]
+            df_out = df[[ts_col, val_col]].copy()
+            df_out.columns = ['TIMESTAMP', 'VALUE']
+            df_out['TIMESTAMP'] = pd.to_datetime(df_out['TIMESTAMP'].astype(str).str.replace('"',''), errors='coerce')
+            df_out['VALUE'] = pd.to_numeric(df_out['VALUE'], errors='coerce')
+            return df_out.dropna()
+
     except Exception:
         return None
 
@@ -693,7 +746,7 @@ _LAYOUT_DARK = dict(
 
 def construir_analisis_avanzado():
     st.subheader("📊 Panel de Análisis Avanzado e Histórico")
-    st.markdown("NICOLAIDES INDUSTRIAL")
+    st.markdown("Filtra ventanas de tiempo extendidas y visualiza el comportamiento de todas las profundidades simultáneamente.")
 
     # ── Controles globales ────────────────────────────────────────────────
     col_proj, col_time, col_var = st.columns(3)
@@ -797,104 +850,96 @@ def construir_analisis_avanzado():
         )
 
     # ══════════════════════════════════════════════════════════════════════
-    # SECCIÓN 2 — Pluviómetro: ambos relaves en el mismo gráfico
+    # SECCIÓN 2 — Pluviómetro: solo el relave seleccionado
     # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("#### 🌧️ Histórico de Lluvia — Ambos Relaves")
+    st.markdown(f"#### 🌧️ Histórico de Lluvia — {_nombre_sel}")
 
-    fig_rain = go.Figure()
-    rain_exports = {}
-    for nombre_disp, key_proj in {"Relave A": "DRF", "Relave B": "ROMERAL"}.items():
-        cfg_r = CONFIG_PROYECTOS[key_proj]
-        df_r  = _cargar_csv_serie(cfg_r["csv_rain"], col_ts=0, col_val=3)
-        if df_r is not None and not df_r.empty:
-            df_r = df_r[df_r['TIMESTAMP'] >= fecha_limite].copy()
-            if not df_r.empty:
-                fig_rain.add_trace(go.Bar(
-                    x=df_r['TIMESTAMP'], y=df_r['VALUE'],
-                    name=nombre_disp,
-                    opacity=0.75,
-                    hovertemplate=f'<b>{nombre_disp}</b><br>%{{x}}<br>Lluvia: %{{y:.2f}} mm<extra></extra>'
-                ))
-                rain_exports[nombre_disp] = df_r.set_index('TIMESTAMP').rename(columns={'VALUE': nombre_disp})
-        else:
-            st.caption(f"⚠️ Sin datos de lluvia para {nombre_disp} ({cfg_r['csv_rain']})")
-
-    fig_rain.update_layout(
-        **_LAYOUT_DARK,
-        barmode='group',
-        yaxis=dict(title="Precipitación (mm)", showgrid=True, gridcolor="#21262d"),
-        height=320,
-    )
-    st.plotly_chart(fig_rain, use_container_width=True)
-
-    if rain_exports:
-        try:
-            _parts = [df.groupby(level=0).mean() for df in rain_exports.values()]
-            df_rain_exp = pd.concat(_parts, axis=1).reset_index()
-            df_rain_exp.columns = ['TIMESTAMP'] + list(rain_exports.keys())
+    cfg_r = CONFIG_PROYECTOS[proyecto_sel]
+    df_r  = _cargar_csv_serie(cfg_r["csv_rain"], col_ts=0, col_val=3)
+    if df_r is not None and not df_r.empty:
+        df_r = df_r[df_r['TIMESTAMP'] >= fecha_limite].copy()
+        if not df_r.empty:
+            # Acumulado del período
+            df_r = df_r.sort_values('TIMESTAMP')
+            df_r['acumulado'] = df_r['VALUE'].cumsum()
+            fig_rain = go.Figure()
+            fig_rain.add_trace(go.Bar(
+                x=df_r['TIMESTAMP'], y=df_r['VALUE'],
+                name='mm/hr', opacity=0.8,
+                marker_color='#2a78d6',
+                hovertemplate='%{x}<br>Lluvia: %{y:.2f} mm/hr<extra></extra>'
+            ))
+            fig_rain.add_trace(go.Scatter(
+                x=df_r['TIMESTAMP'], y=df_r['acumulado'],
+                name='Acumulado (mm)', mode='lines',
+                line=dict(color='#fbbf24', width=2, dash='dot'),
+                yaxis='y2',
+                hovertemplate='%{x}<br>Acumulado: %{y:.1f} mm<extra></extra>'
+            ))
+            fig_rain.update_layout(
+                **_LAYOUT_DARK,
+                barmode='overlay',
+                yaxis=dict(title="mm/hr", showgrid=True, gridcolor="#21262d"),
+                yaxis2=dict(title="Acumulado (mm)", overlaying='y', side='right',
+                            showgrid=False, color='#fbbf24'),
+                height=320,
+            )
+            st.plotly_chart(fig_rain, use_container_width=True)
+            st.caption(f"Total período: **{df_r['VALUE'].sum():.1f} mm** | Pico: **{df_r['VALUE'].max():.2f} mm/hr**")
             st.download_button(
-                label="⬇️ Exportar lluvia — Ambos Relaves (CSV)",
-                data=df_rain_exp.to_csv(index=False).encode('utf-8'),
-                file_name=f"lluvia_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
+                label=f"⬇️ Exportar lluvia — {_nombre_sel} (CSV)",
+                data=df_r[['TIMESTAMP','VALUE','acumulado']].rename(
+                    columns={'VALUE':'mm_hr','acumulado':'mm_acumulado'}
+                ).to_csv(index=False).encode('utf-8'),
+                file_name=f"lluvia_{_nombre_sel.replace(' ','_')}.csv",
                 mime="text/csv", use_container_width=True
             )
-        except Exception:
-            st.caption("No se pudo generar el CSV combinado de lluvia.")
+        else:
+            st.info("Sin datos de lluvia en el rango seleccionado.")
+    else:
+        st.caption(f"⚠️ Sin datos de lluvia para {_nombre_sel} ({cfg_r['csv_rain']})")
 
     # ══════════════════════════════════════════════════════════════════════
-    # SECCIÓN 3 — Voltaje / Batería: ambos relaves
+    # SECCIÓN 3 — Voltaje / Batería: solo el relave seleccionado
     # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("#### 🔋 Histórico de Voltaje del Sistema — Ambos Relaves")
-    st.caption("Monitoreo del estado de la batería del datalogger. Valores normales: 12–13.5 V.")
+    st.markdown(f"#### 🔋 Histórico de Voltaje del Sistema — {_nombre_sel}")
+    st.caption("Valores normales: 12–13.5 V.")
 
-    fig_bat = go.Figure()
-    bat_exports = {}
-    colores_bat = {"Relave A": "#3dd68c", "Relave B": "#38bdf8"}
-    for nombre_disp, key_proj in {"Relave A": "DRF", "Relave B": "ROMERAL"}.items():
-        cfg_b = CONFIG_PROYECTOS[key_proj]
-        df_b  = _cargar_csv_serie(cfg_b["csv_monitor"], col_ts=0, col_val=2)
-        if df_b is not None and not df_b.empty:
-            df_b = df_b[df_b['TIMESTAMP'] >= fecha_limite].copy()
-            if not df_b.empty:
-                fig_bat.add_trace(go.Scatter(
-                    x=df_b['TIMESTAMP'], y=df_b['VALUE'],
-                    mode='lines', name=nombre_disp,
-                    line=dict(width=2, color=colores_bat[nombre_disp]),
-                    hovertemplate=f'<b>{nombre_disp}</b><br>%{{x}}<br>Batería: %{{y:.2f}} V<extra></extra>'
-                ))
-                # Línea de alerta en 11.5V
-                fig_bat.add_hline(
-                    y=11.5, line_dash="dot",
-                    line_color="#f87171", opacity=0.5,
-                    annotation_text="Mín. operación (11.5V)",
-                    annotation_position="bottom right"
-                )
-                bat_exports[nombre_disp] = df_b.set_index('TIMESTAMP').rename(columns={'VALUE': nombre_disp})
-        else:
-            st.caption(f"⚠️ Sin datos de batería para {nombre_disp} ({cfg_b['csv_monitor']})")
-
-    fig_bat.update_layout(
-        **_LAYOUT_DARK,
-        yaxis=dict(title="Voltaje (V)", showgrid=True, gridcolor="#21262d", rangemode='tozero'),
-        height=320,
-    )
-    st.plotly_chart(fig_bat, use_container_width=True)
-
-    if bat_exports:
-        try:
-            _parts = [df.groupby(level=0).mean() for df in bat_exports.values()]
-            df_bat_exp = pd.concat(_parts, axis=1).reset_index()
-            df_bat_exp.columns = ['TIMESTAMP'] + list(bat_exports.keys())
+    cfg_b = CONFIG_PROYECTOS[proyecto_sel]
+    df_b  = _cargar_csv_serie(cfg_b["csv_monitor"], col_ts=0, col_val=2)
+    if df_b is not None and not df_b.empty:
+        df_b = df_b[df_b['TIMESTAMP'] >= fecha_limite].copy()
+        if not df_b.empty:
+            fig_bat = go.Figure()
+            fig_bat.add_trace(go.Scatter(
+                x=df_b['TIMESTAMP'], y=df_b['VALUE'],
+                mode='lines', name='Voltaje',
+                line=dict(width=2, color='#3dd68c'),
+                hovertemplate='%{x}<br>Batería: %{y:.2f} V<extra></extra>'
+            ))
+            fig_bat.add_hline(
+                y=11.5, line_dash="dot", line_color="#f87171", opacity=0.6,
+                annotation_text="Mín. 11.5V", annotation_position="bottom right"
+            )
+            fig_bat.update_layout(
+                **_LAYOUT_DARK,
+                yaxis=dict(title="Voltaje (V)", showgrid=True, gridcolor="#21262d"),
+                height=280,
+            )
+            st.plotly_chart(fig_bat, use_container_width=True)
+            ultimo_v = df_b['VALUE'].iloc[-1]
+            estado_bat = "✅ Normal" if ultimo_v >= 12.0 else "⚠️ Baja" if ultimo_v >= 11.5 else "🔴 Crítica"
+            st.caption(f"Último valor: **{ultimo_v:.2f} V** — {estado_bat}")
             st.download_button(
-                label="⬇️ Exportar voltaje — Ambos Relaves (CSV)",
-                data=df_bat_exp.to_csv(index=False).encode('utf-8'),
-                file_name=f"voltaje_ambos_relaves_{rango_tiempo.replace(' ','_')}.csv",
+                label=f"⬇️ Exportar voltaje — {_nombre_sel} (CSV)",
+                data=df_b.rename(columns={'VALUE':'voltaje_V'}).to_csv(index=False).encode('utf-8'),
+                file_name=f"voltaje_{_nombre_sel.replace(' ','_')}.csv",
                 mime="text/csv", use_container_width=True
             )
-        except Exception:
-            st.caption("No se pudo generar el CSV combinado de voltaje.")
+    else:
+        st.caption(f"⚠️ Sin datos de batería para {_nombre_sel} ({cfg_b['csv_monitor']})")
 
 
 # ─────────────────────────────────────────────
