@@ -955,7 +955,7 @@ def construir_analisis_avanzado():
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=rain_hr2.index, y=rain_hr2.values, name="Lluvia mm/6h",
-                marker_color="#2a78d655", yaxis="y",
+                marker_color="#2a78d655",
                 hovertemplate="%{x}<br>Lluvia: %{y:.2f} mm<extra></extra>"
             ))
             for i, c in enumerate(series_cols):
