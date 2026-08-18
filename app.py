@@ -670,66 +670,46 @@ def construir_interfaz_proyecto(id_proyecto: str):
 
 def _cargar_csv_serie(filepath: str, col_ts: int, col_val: int, sep: str = ",") -> pd.DataFrame | None:
     """Carga un CSV o XLSX auxiliar (rain / monitor) y retorna DataFrame con TIMESTAMP y VALUE."""
-    if not os.path.exists(filepath):
-        return None
     try:
         ext = os.path.splitext(filepath)[1].lower()
 
         if ext in ('.xlsx', '.xls'):
-            # Archivo Excel — detectar columnas automáticamente
             df_raw = pd.read_excel(filepath)
             df_raw.columns = df_raw.columns.str.strip()
 
-            # Buscar columna de timestamp
-            ts_col = next((c for c in df_raw.columns
-                           if any(k in c.lower() for k in ['fecha','timestamp','time','date'])), None)
-            if ts_col is None:
-                ts_col = df_raw.columns[0]
-
-            # Buscar columna de lluvia (mm) — preferir Huasco Costa para DRF
-            val_col = next((c for c in df_raw.columns if 'Huasco' in c), None)
+            # Timestamp: columna Fecha + Tramo Horario
+            ts_col    = next((c for c in df_raw.columns if any(k in c.lower() for k in ['fecha','timestamp','time','date'])), df_raw.columns[0])
+            tramo_col = next((c for c in df_raw.columns if any(k in c.lower() for k in ['tramo','hora','horario'])), None)
+            val_col   = next((c for c in df_raw.columns if 'Huasco' in c), None)
             if val_col is None:
-                val_col = next((c for c in df_raw.columns
-                                if any(k in c.lower() for k in ['rain','lluvia','mm','precip'])), None)
-            if val_col is None:
-                val_col = df_raw.columns[col_val] if col_val < len(df_raw.columns) else df_raw.columns[1]
+                val_col = next((c for c in df_raw.columns if any(k in c.lower() for k in ['rain','lluvia','mm','precip'])), df_raw.columns[col_val if col_val < len(df_raw.columns) else 1])
 
-            # Si hay columna de tramo horario, construir timestamp completo
-            tramo_col = next((c for c in df_raw.columns
-                              if any(k in c.lower() for k in ['tramo','hora','horario'])), None)
             if tramo_col is not None:
-                def _parse_ts(row):
+                def _pts(row):
                     try:
                         hora = str(row[tramo_col]).split(' - ')[0].strip()
                         return pd.to_datetime(str(pd.Timestamp(row[ts_col]).date()) + ' ' + hora)
                     except Exception:
                         return pd.NaT
-                df_raw['_TS'] = df_raw.apply(_parse_ts, axis=1)
+                df_raw['_TS'] = df_raw.apply(_pts, axis=1)
+                df_raw['_VAL'] = pd.to_numeric(df_raw[val_col], errors='coerce') / 3.0
             else:
-                df_raw['_TS'] = pd.to_datetime(df_raw[ts_col], errors='coerce')
+                df_raw['_TS']  = pd.to_datetime(df_raw[ts_col], errors='coerce')
+                df_raw['_VAL'] = pd.to_numeric(df_raw[val_col], errors='coerce')
 
-            # Convertir mm/tramo a mm/hr (tramos de 3h → dividir por 3)
-            df_raw['_VAL'] = pd.to_numeric(df_raw[val_col], errors='coerce')
-            if tramo_col is not None:
-                df_raw['_VAL'] = df_raw['_VAL'] / 3.0  # mm/3h → mm/hr
-
-            df_out = df_raw[['_TS','_VAL']].copy()
-            df_out.columns = ['TIMESTAMP', 'VALUE']
-            return df_out.dropna()
+            return df_raw[['_TS','_VAL']].rename(columns={'_TS':'TIMESTAMP','_VAL':'VALUE'}).dropna()
 
         else:
-            # CSV Campbell estándar — skiprows metadata
+            # CSV Campbell estándar
             df = pd.read_csv(filepath, skiprows=[0, 2, 3], low_memory=False)
             df.columns = df.columns.str.replace('"','').str.replace("'","").str.strip()
-            # Buscar columna de lluvia
-            rain_col = next((c for c in df.columns
-                             if any(k in c.lower() for k in ['rain_hr','rain','lluvia'])), None)
-            ts_col = 'TIMESTAMP' if 'TIMESTAMP' in df.columns else df.columns[col_ts]
-            val_col = rain_col if rain_col else df.columns[col_val]
-            df_out = df[[ts_col, val_col]].copy()
+            ts_col   = 'TIMESTAMP' if 'TIMESTAMP' in df.columns else df.columns[col_ts]
+            rain_col = next((c for c in df.columns if any(k in c.lower() for k in ['rain_hr','rain','lluvia'])), None)
+            val_col  = rain_col if rain_col else df.columns[col_val]
+            df_out   = df[[ts_col, val_col]].copy()
             df_out.columns = ['TIMESTAMP', 'VALUE']
             df_out['TIMESTAMP'] = pd.to_datetime(df_out['TIMESTAMP'].astype(str).str.replace('"',''), errors='coerce')
-            df_out['VALUE'] = pd.to_numeric(df_out['VALUE'], errors='coerce')
+            df_out['VALUE']     = pd.to_numeric(df_out['VALUE'], errors='coerce')
             return df_out.dropna()
 
     except Exception:
