@@ -976,8 +976,13 @@ def construir_analisis_avanzado():
                         hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}} cm<extra></extra>"
                     ))
             fig_dpt2.update_layout(
-                **_LAYOUT_DARK,
+                template="plotly_dark",
+                paper_bgcolor="#161b22",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#8b949e", family="Segoe UI"),
+                margin=dict(l=50, r=50, t=30, b=80),
                 height=340,
+                xaxis=dict(showgrid=True, gridcolor="#21262d"),
                 yaxis=dict(title="Lluvia (mm/6h)", showgrid=True,
                            gridcolor="#21262d", autorange="reversed"),
                 yaxis2=dict(title="Nivel h2o (cm)", overlaying="y",
@@ -1009,8 +1014,13 @@ def construir_analisis_avanzado():
                         hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}}%<extra></extra>"
                     ))
             fig_vwc2.update_layout(
-                **_LAYOUT_DARK,
+                template="plotly_dark",
+                paper_bgcolor="#161b22",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#8b949e", family="Segoe UI"),
+                margin=dict(l=50, r=50, t=30, b=80),
                 height=340,
+                xaxis=dict(showgrid=True, gridcolor="#21262d"),
                 yaxis=dict(title="Lluvia (mm/6h)", showgrid=True,
                            gridcolor="#21262d", autorange="reversed"),
                 yaxis2=dict(title="VWC (%)", overlaying="y",
