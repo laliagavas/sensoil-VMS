@@ -924,11 +924,69 @@ def construir_analisis_avanzado():
                 mime="text/csv", use_container_width=True
             )
     else:
-        st.caption(f"⚠️ Sin datos de batería para {_nombre_sel} ({cfg_b['csv_monitor']})")
+        st.caption(f"\u26a0\ufe0f Sin datos de bater\u00eda para {_nombre_sel} ({cfg_b['csv_monitor']})")
+
+    # \u2550\u2550 SECCI\u00d3N 4 \u2014 Correlaci\u00f3n lluvia vs percolaci\u00f3n
+    st.markdown("---")
+    st.markdown(f"#### \U0001f4a7 Correlaci\u00f3n Lluvia vs Percolaci\u00f3n \u2014 {_nombre_sel}")
+    st.caption("Respuesta de los sensores ante la lluvia ca\u00edda. Lluvia invertida (barras) en eje izquierdo, sensores en eje derecho.")
+
+    df_adv2, err2 = cargar_datos_proyecto(proyecto_sel)
+    df_rain2 = _cargar_csv_serie(CONFIG_PROYECTOS[proyecto_sel]["csv_rain"], col_ts=0, col_val=3)
+
+    if not err2 and df_adv2 is not None:
+        n2        = CONFIG_PROYECTOS[proyecto_sel]["max_sensores"]
+        dpt_cols2 = get_cols(df_adv2, "DPT", n2)
+        vwc_cols2 = get_cols(df_adv2, "VWC", n2)
+        df_filt2  = df_adv2[df_adv2["TIMESTAMP"] >= fecha_limite].set_index("TIMESTAMP")
+        for c in dpt_cols2 + vwc_cols2:
+            df_filt2[c] = pd.to_numeric(df_filt2[c], errors="coerce")
+        dpt_hr2 = df_filt2[dpt_cols2].resample("6h").mean() if dpt_cols2 else pd.DataFrame()
+        vwc_hr2 = df_filt2[vwc_cols2].resample("6h").mean() if vwc_cols2 else pd.DataFrame()
+        rain_idx = dpt_hr2.index if not dpt_hr2.empty else vwc_hr2.index
+        if df_rain2 is not None and not df_rain2.empty and len(rain_idx):
+            rain_hr2 = df_rain2.set_index("TIMESTAMP")["VALUE"].resample("6h").sum().reindex(rain_idx, fill_value=0)
+        else:
+            rain_hr2 = pd.Series(0, index=rain_idx)
+
+        C = ["#e34948","#eb6834","#1baf7a","#eda100","#4a3aa7","#e87ba4","#008300","#2a78d6"]
+
+        def _fig_corr(series_cols, df_hr, ytitle):
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=rain_hr2.index, y=rain_hr2.values, name="Lluvia mm/6h",
+                marker_color="#2a78d655", yaxis="y1",
+                hovertemplate="%{x}<br>Lluvia: %{y:.2f} mm<extra></extra>"
+            ))
+            for i, c in enumerate(series_cols):
+                if c in df_hr.columns:
+                    fig.add_trace(go.Scatter(
+                        x=df_hr.index, y=df_hr[c], mode="lines",
+                        name=fmt_depth(c),
+                        line=dict(color=C[i % len(C)], width=2),
+                        yaxis="y2",
+                        hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}}<extra></extra>"
+                    ))
+            fig.update_layout(
+                **_LAYOUT_DARK, height=340,
+                yaxis=dict(title="Lluvia (mm/6h)", showgrid=True, gridcolor="#21262d",
+                           autorange="reversed", side="left"),
+                yaxis2=dict(title=ytitle, showgrid=False, overlaying="y", side="right"),
+                legend=dict(orientation="h", y=-0.28, x=0, font=dict(size=10)),
+            )
+            return fig
+
+        col_izq, col_der = st.columns(2)
+        with col_izq:
+            st.markdown("**Nivel hidrost\u00e1tico (DPT)**")
+            st.plotly_chart(_fig_corr(dpt_cols2, dpt_hr2, "Nivel h\u2082o (cm)"), use_container_width=True)
+        with col_der:
+            st.markdown("**Humedad volum\u00e9trica (VWC)**")
+            st.plotly_chart(_fig_corr(vwc_cols2, vwc_hr2, "VWC (%)"), use_container_width=True)
 
 
-# ─────────────────────────────────────────────
-# 8. SISTEMA DE PESTAÑAS GLOBAL
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# 8. SISTEMA DE PESTA\u00d1AS GLOBAL
 # ─────────────────────────────────────────────
 tab_monitoreo, tab_avanzado = st.tabs([
     "📍 Monitoreo en Tiempo Real",
