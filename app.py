@@ -43,7 +43,7 @@ CONFIG_PROYECTOS = {
     "DRF": {
         "nombre_estacion": "Relave A",
         "csv_data":    "DRF.csv",
-        "csv_rain":    "lluvia_DRF.xlsx",
+        "csv_rain":    "DRFRain.csv",
         "csv_monitor": "DRFFTPMonitor.csv",
         "densidad":    1.89,
         "max_sensores": 7,
