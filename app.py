@@ -951,38 +951,73 @@ def construir_analisis_avanzado():
 
         C = ["#e34948","#eb6834","#1baf7a","#eda100","#4a3aa7","#e87ba4","#008300","#2a78d6"]
 
-        def _fig_corr(series_cols, df_hr, ytitle):
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=rain_hr2.index, y=rain_hr2.values, name="Lluvia mm/6h",
-                marker_color="#2a78d655",
+        col_izq, col_der = st.columns(2)
+
+        # Grafico DPT
+        with col_izq:
+            st.markdown("**Nivel hidrostático (DPT)**")
+            fig_dpt2 = go.Figure()
+            fig_dpt2.add_trace(go.Bar(
+                x=list(rain_hr2.index),
+                y=list(rain_hr2.values),
+                name="Lluvia mm/6h",
+                marker=dict(color="rgba(42,120,214,0.4)"),
                 hovertemplate="%{x}<br>Lluvia: %{y:.2f} mm<extra></extra>"
             ))
-            for i, c in enumerate(series_cols):
-                if c in df_hr.columns:
-                    fig.add_trace(go.Scatter(
-                        x=df_hr.index, y=df_hr[c], mode="lines",
+            for i, c in enumerate(dpt_cols2):
+                if c in dpt_hr2.columns:
+                    fig_dpt2.add_trace(go.Scatter(
+                        x=list(dpt_hr2.index),
+                        y=list(dpt_hr2[c]),
+                        mode="lines",
                         name=fmt_depth(c),
                         line=dict(color=C[i % len(C)], width=2),
                         yaxis="y2",
-                        hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}}<extra></extra>"
+                        hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}} cm<extra></extra>"
                     ))
-            fig.update_layout(
-                **_LAYOUT_DARK, height=340,
-                yaxis=dict(title="Lluvia (mm/6h)", showgrid=True, gridcolor="#21262d",
-                           autorange="reversed", side="left"),
-                yaxis2=dict(title=ytitle, showgrid=False, overlaying="y", side="right"),
-                legend=dict(orientation="h", y=-0.28, x=0, font=dict(size=10)),
+            fig_dpt2.update_layout(
+                **_LAYOUT_DARK,
+                height=340,
+                yaxis=dict(title="Lluvia (mm/6h)", showgrid=True,
+                           gridcolor="#21262d", autorange="reversed"),
+                yaxis2=dict(title="Nivel h2o (cm)", overlaying="y",
+                            side="right", showgrid=False),
+                legend=dict(orientation="h", y=-0.3, x=0, font=dict(size=10)),
             )
-            return fig
+            st.plotly_chart(fig_dpt2, use_container_width=True)
 
-        col_izq, col_der = st.columns(2)
-        with col_izq:
-            st.markdown("**Nivel hidrost\u00e1tico (DPT)**")
-            st.plotly_chart(_fig_corr(dpt_cols2, dpt_hr2, "Nivel h\u2082o (cm)"), use_container_width=True)
+        # Grafico VWC
         with col_der:
-            st.markdown("**Humedad volum\u00e9trica (VWC)**")
-            st.plotly_chart(_fig_corr(vwc_cols2, vwc_hr2, "VWC (%)"), use_container_width=True)
+            st.markdown("**Humedad volumétrica (VWC)**")
+            fig_vwc2 = go.Figure()
+            fig_vwc2.add_trace(go.Bar(
+                x=list(rain_hr2.index),
+                y=list(rain_hr2.values),
+                name="Lluvia mm/6h",
+                marker=dict(color="rgba(42,120,214,0.4)"),
+                hovertemplate="%{x}<br>Lluvia: %{y:.2f} mm<extra></extra>"
+            ))
+            for i, c in enumerate(vwc_cols2):
+                if c in vwc_hr2.columns:
+                    fig_vwc2.add_trace(go.Scatter(
+                        x=list(vwc_hr2.index),
+                        y=list(vwc_hr2[c]),
+                        mode="lines",
+                        name=fmt_depth(c),
+                        line=dict(color=C[i % len(C)], width=2),
+                        yaxis="y2",
+                        hovertemplate=f"%{{x}}<br>{fmt_depth(c)}: %{{y:.1f}}%<extra></extra>"
+                    ))
+            fig_vwc2.update_layout(
+                **_LAYOUT_DARK,
+                height=340,
+                yaxis=dict(title="Lluvia (mm/6h)", showgrid=True,
+                           gridcolor="#21262d", autorange="reversed"),
+                yaxis2=dict(title="VWC (%)", overlaying="y",
+                            side="right", showgrid=False),
+                legend=dict(orientation="h", y=-0.3, x=0, font=dict(size=10)),
+            )
+            st.plotly_chart(fig_vwc2, use_container_width=True)
 
 
 # \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
