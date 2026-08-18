@@ -836,17 +836,12 @@ def construir_analisis_avanzado():
     st.markdown(f"#### 🌧️ Histórico de Lluvia — {_nombre_sel}")
 
     cfg_r = CONFIG_PROYECTOS[proyecto_sel]
-    # DEBUG TEMPORAL — borrar después
-    try:
-        import openpyxl
-        _test = pd.read_excel(cfg_r["csv_rain"])
-        st.success(f"✅ Archivo leído OK: {cfg_r['csv_rain']} — {len(_test)} filas, columnas: {_test.columns.tolist()}")
-    except Exception as _e:
-        st.error(f"❌ Error al leer {cfg_r['csv_rain']}: {_e}")
-    # FIN DEBUG
     df_r  = _cargar_csv_serie(cfg_r["csv_rain"], col_ts=0, col_val=3)
     if df_r is not None and not df_r.empty:
-        df_r = df_r[df_r['TIMESTAMP'] >= fecha_limite].copy()
+        # fecha_limite basada en el rango del propio archivo de lluvia
+        _hoy_rain = df_r['TIMESTAMP'].max()
+        _fecha_lim_rain = _hoy_rain - pd.Timedelta(days=deltas.get(rango_tiempo, 0))             if rango_tiempo in deltas else df_r['TIMESTAMP'].min()
+        df_r = df_r[df_r['TIMESTAMP'] >= _fecha_lim_rain].copy()
         if not df_r.empty:
             # Acumulado del período
             df_r = df_r.sort_values('TIMESTAMP')
@@ -898,7 +893,9 @@ def construir_analisis_avanzado():
     cfg_b = CONFIG_PROYECTOS[proyecto_sel]
     df_b  = _cargar_csv_serie(cfg_b["csv_monitor"], col_ts=0, col_val=2)
     if df_b is not None and not df_b.empty:
-        df_b = df_b[df_b['TIMESTAMP'] >= fecha_limite].copy()
+        _hoy_bat = df_b['TIMESTAMP'].max()
+        _fecha_lim_bat = _hoy_bat - pd.Timedelta(days=deltas.get(rango_tiempo, 0))             if rango_tiempo in deltas else df_b['TIMESTAMP'].min()
+        df_b = df_b[df_b['TIMESTAMP'] >= _fecha_lim_bat].copy()
         if not df_b.empty:
             fig_bat = go.Figure()
             fig_bat.add_trace(go.Scatter(
