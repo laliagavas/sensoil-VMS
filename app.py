@@ -836,6 +836,14 @@ def construir_analisis_avanzado():
     st.markdown(f"#### 🌧️ Histórico de Lluvia — {_nombre_sel}")
 
     cfg_r = CONFIG_PROYECTOS[proyecto_sel]
+    # DEBUG TEMPORAL — borrar después
+    try:
+        import openpyxl
+        _test = pd.read_excel(cfg_r["csv_rain"])
+        st.success(f"✅ Archivo leído OK: {cfg_r['csv_rain']} — {len(_test)} filas, columnas: {_test.columns.tolist()}")
+    except Exception as _e:
+        st.error(f"❌ Error al leer {cfg_r['csv_rain']}: {_e}")
+    # FIN DEBUG
     df_r  = _cargar_csv_serie(cfg_r["csv_rain"], col_ts=0, col_val=3)
     if df_r is not None and not df_r.empty:
         df_r = df_r[df_r['TIMESTAMP'] >= fecha_limite].copy()
